@@ -35,6 +35,12 @@ import sys
 sys.setrecursionlimit(100000)
 
 
+def _parse_model_type(model_type):
+    if '@' in model_type:
+        return model_type.split('@', 1)
+    return model_type, 'huggingface_llm'
+
+
 class LLMTrainer(GeneralTorchTrainer):
     def __init__(self,
                  model,
@@ -55,7 +61,7 @@ class LLMTrainer(GeneralTorchTrainer):
             device = self.accelerator.device
 
         super().__init__(model, data, device, config, only_for_eval, monitor)
-        model_name, _ = config.model.type.split('@')
+        model_name, _ = _parse_model_type(config.model.type)
         self.tokenizer, _ = get_tokenizer(model_name, config.data.root,
                                           config.llm.tok_len)
         self.eval_metrics = config.eval.metrics

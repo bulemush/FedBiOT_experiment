@@ -36,7 +36,9 @@ llm:
       sim_loss: 'l2'
       layerwise_distill: False
       kl_divergence: 'raw'
+      init_enable_ground_truth: False
       train:
+        enable_ground_truth: False
         local_update_steps: 5
         initial_update_rounds: 100
         lm_loss_weight: 1.0
