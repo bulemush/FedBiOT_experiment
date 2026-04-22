@@ -54,6 +54,8 @@ def extend_llm_cfg(cfg):
     cfg.llm.adapter = CN()
     cfg.llm.adapter.use = False
     cfg.llm.adapter.args = [{}]
+    cfg.llm.adapter.local_only = False
+    cfg.llm.adapter.count = 1
     # Move adapter to `cpu` after training, which can save memory but cost
     # more time.
     cfg.llm.adapter.mv_to_cpu = False

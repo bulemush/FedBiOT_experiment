@@ -44,7 +44,7 @@ llm:
 dataloader:
   batch_size: 5
 model:
-  type: 'meta-llama/Llama-2-7b-hf@huggingface_llm'
+  type: 'federatedscope/llm/data/models/Llama-2-7b-hf'
 train:
   local_update_steps: 30
   batch_or_epoch: batch
