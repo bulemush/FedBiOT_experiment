@@ -19,6 +19,12 @@ from federatedscope.llm.model.model_builder import get_llm
 logger = logging.getLogger(__name__)
 
 
+def _parse_model_type(model_type):
+    if '@' in model_type:
+        return model_type.split('@', 1)
+    return model_type, 'huggingface_llm'
+
+
 @dataclass
 class LLMDataCollator(object):
     """Collate examples for supervised fine-tuning."""
@@ -122,12 +128,14 @@ def get_tokenizer(model_name, cache_dir, tok_len=128, padding_side="right"):
             use_fast=False,
         )
     else:
+        local_files_only = os.path.isdir(model_name)
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             cache_dir=cache_dir,
             model_max_length=tok_len,
             padding_side=padding_side,
             use_fast=False,
+            local_files_only=local_files_only,
         )
 
     special_tokens = dict()
@@ -250,7 +258,7 @@ def load_jsonls(file_paths,
 
 
 def load_llm_dataset(config=None, **kwargs):
-    model_name, _ = config.model.type.split('@')
+    model_name, _ = _parse_model_type(config.model.type)
     tokenizer, num_new_tokens = \
         get_tokenizer(model_name, config.data.root, config.llm.tok_len)
 

@@ -9,11 +9,24 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _is_local_model_path(model_name):
+    return os.path.isdir(model_name)
+
+
+def _parse_model_type(model_type):
+    if '@' in model_type:
+        return model_type.split('@', 1)
+    return model_type, 'huggingface_llm'
+
+
 def get_model_from_huggingface(model_name, config, **kwargs):
     from transformers import AutoModelForCausalLM
 
     if len(config.llm.cache.model):
         kwargs['cache_dir'] = config.llm.cache.model
+
+    if _is_local_model_path(model_name):
+        kwargs['local_files_only'] = True
 
     if config.train.is_enable_half:
         kwargs['torch_dtype'] = torch.bfloat16
@@ -41,14 +54,14 @@ def get_llm(config, load_from_prev_ckpt=False, **kwargs):
     from federatedscope.llm.dataloader import get_tokenizer
 
     model_config = config.model
-    model_name, model_hub = model_config.type.split('@')
+    model_name, model_hub = _parse_model_type(model_config.type)
 
     if config.model.load_from_local_pretrained_fs_config != '':
         # load model from local pretrained model
         pretrained_cfg = global_cfg.clone()
         pretrained_cfg.merge_from_file(
             config.model.load_from_local_pretrained_fs_config)
-        assert pretrained_cfg.model.type.split('@')[0] == model_name, \
+        assert _parse_model_type(pretrained_cfg.model.type)[0] == model_name, \
             'Two models cannot match. Failed to load from pretrained.'
         pretrained_model = get_llm(pretrained_cfg, **kwargs)
         if config.model.load_from_local_pretrained_model_path != '':
