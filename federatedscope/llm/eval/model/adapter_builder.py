@@ -9,8 +9,17 @@ from accelerate import dispatch_model, infer_auto_device_map, \
 from accelerate.utils import get_balanced_memory
 
 from transformers import (OPTForCausalLM, GPT2LMHeadModel, BloomForCausalLM,
-                          LlamaForCausalLM, LlamaForSequenceClassification,
-                          Qwen2ForCausalLM, GemmaForCausalLM)
+                          LlamaForCausalLM, LlamaForSequenceClassification)
+
+try:
+    from transformers import Qwen2ForCausalLM
+except ImportError:
+    Qwen2ForCausalLM = None
+
+try:
+    from transformers import GemmaForCausalLM
+except ImportError:
+    GemmaForCausalLM = None
 
 MODEL_UNIT = {
     LlamaForCausalLM: ['LlamaDecoderLayer'],
@@ -18,9 +27,13 @@ MODEL_UNIT = {
     BloomForCausalLM: ['BloomBlock'],
     GPT2LMHeadModel: ['GPT2Block'],
     OPTForCausalLM: ['OPTDecoderLayer'],
-    Qwen2ForCausalLM: ['Qwen2DecoderLayer'],
-    GemmaForCausalLM: ['GemmaDecoderLayer']
 }
+
+if Qwen2ForCausalLM is not None:
+    MODEL_UNIT[Qwen2ForCausalLM] = ['Qwen2DecoderLayer']
+
+if GemmaForCausalLM is not None:
+    MODEL_UNIT[GemmaForCausalLM] = ['GemmaDecoderLayer']
 
 import logging
 import sys
