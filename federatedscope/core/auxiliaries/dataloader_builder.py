@@ -8,6 +8,12 @@ except ImportError:
     Dataset = object
 
 
+def _parse_model_type(model_type):
+    if '@' in model_type:
+        return model_type.split('@', 1)
+    return model_type, 'huggingface_llm'
+
+
 def get_dataloader(dataset, config, split='train'):
     """
     Instantiate a DataLoader via config.
@@ -87,7 +93,7 @@ def get_dataloader(dataset, config, split='train'):
     if config.data.type.lower().endswith('@llm'):
         from federatedscope.llm.dataloader import get_tokenizer, \
             LLMDataCollator
-        model_name, _ = config.model.type.split('@')
+        model_name, _ = _parse_model_type(config.model.type)
         tokenizer, _ = get_tokenizer(model_name, config.data.root,
                                      config.llm.tok_len)
         data_collator = LLMDataCollator(tokenizer=tokenizer)
