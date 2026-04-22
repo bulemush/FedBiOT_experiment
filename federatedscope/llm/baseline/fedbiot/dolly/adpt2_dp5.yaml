@@ -16,10 +16,12 @@ data:
   splits: [0.99, 0.0, 0.01]
   splitter: 'meta'
 llm:
-  grad_accum_step: 2
-  tok_len: 650
+  grad_accum_step: 8
+  tok_len: 384
   chat:
     max_len: 1000
+  accelerator:
+    use: True
   adapter:
     use: True
     args: [ { 'adapter_package': 'peft', 'adapter_method': 'lora', 'r': 8, 'lora_alpha': 16, 'lora_dropout': 0.05 } ]
@@ -37,14 +39,19 @@ llm:
       layerwise_distill: False
       kl_divergence: 'raw'
       init_enable_ground_truth: False
+      data:
+        root: data/
+        type: 'databricks-dolly-15k.jsonl@llm'
+        splits: [0.99, 0.0, 0.01]
+        splitter: 'meta'
       train:
         enable_ground_truth: False
         local_update_steps: 5
-        initial_update_rounds: 100
+        initial_update_rounds: 30
         lm_loss_weight: 1.0
         kd_loss_weight: 0.0
 dataloader:
-  batch_size: 5
+  batch_size: 1
 model:
   type: '/home/async/data-disk/wgh/FedBiOT_experiment/federatedscope/llm/data/models/Llama-2-7b-hf@huggingface_llm'
 train:

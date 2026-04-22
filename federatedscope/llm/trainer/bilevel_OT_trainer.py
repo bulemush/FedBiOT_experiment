@@ -191,9 +191,13 @@ class OTTrainer_server(LLMTrainer):
                  monitor=None):
         super(OTTrainer_server, self).__init__(adapter_model, data, device,
                                                config, only_for_eval, monitor)
-        self.ctx.raw_model = raw_model.to(device)
         self.ctx.raw_model_adapter = copy.deepcopy(
             raw_model.adapter.state_dict())
+        if config.llm.accelerator.use:
+            self.ctx.raw_model = raw_model
+            self.ctx.raw_model.sharding()
+        else:
+            self.ctx.raw_model = raw_model.to(device)
         self.kd_loss_weight = \
             config.llm.offsite_tuning.emu_align.train.kd_loss_weight
         self.layerwise_distill = \
@@ -220,7 +224,8 @@ class OTTrainer_server(LLMTrainer):
     #         ctx.raw_model.to(torch.bfloat16)
 
     def train(self, target_data_split_name="train", hooks_set=None):
-        self.ctx.raw_model.to(self.ctx.device)
+        if not self.cfg.llm.accelerator.use:
+            self.ctx.raw_model.to(self.ctx.device)
         num_samples, model_para_all, eval_metrics = \
             super(OTTrainer_server, self).train(target_data_split_name,
                                                 hooks_set)
