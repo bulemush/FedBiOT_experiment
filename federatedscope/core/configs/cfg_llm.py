@@ -85,6 +85,7 @@ def extend_llm_cfg(cfg):
     cfg.llm.offsite_tuning.emu_align.layerwise_distill = False
     cfg.llm.offsite_tuning.emu_align.kl_divergence = 'raw'  # Choose one of
     # `['raw', 'logps']`
+    cfg.llm.offsite_tuning.emu_align.init_enable_ground_truth = False
     cfg.llm.offsite_tuning.emu_align.restore_from = ''
     cfg.llm.offsite_tuning.emu_align.save_to = ''
     cfg.llm.offsite_tuning.emu_align.exit_after_align = False
@@ -96,6 +97,7 @@ def extend_llm_cfg(cfg):
     cfg.llm.offsite_tuning.emu_align.data.splits = [0.8, 0.1, 0.1]
 
     cfg.llm.offsite_tuning.emu_align.train = CN()
+    cfg.llm.offsite_tuning.emu_align.train.enable_ground_truth = False
     cfg.llm.offsite_tuning.emu_align.train.local_update_steps = 10
     cfg.llm.offsite_tuning.emu_align.train.initial_update_rounds = 50
     cfg.llm.offsite_tuning.emu_align.train.batch_or_epoch = 'batch'
