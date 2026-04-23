@@ -91,7 +91,10 @@ def extend_llm_cfg(cfg):
     cfg.llm.offsite_tuning.emu_align.exit_after_align = False
 
     # Server held-out data
-    cfg.llm.offsite_tuning.emu_align.data = CN()
+    # Emulator alignment reuses regular `data` options and later copies the
+    # overlapping keys back to `cfg.data`, so allow extra `data.*` fields
+    # such as `splitter` / `splitter_args` here.
+    cfg.llm.offsite_tuning.emu_align.data = CN(new_allowed=True)
     cfg.llm.offsite_tuning.emu_align.data.root = 'data'
     cfg.llm.offsite_tuning.emu_align.data.type = 'alpaca@llm'
     cfg.llm.offsite_tuning.emu_align.data.splits = [0.8, 0.1, 0.1]
