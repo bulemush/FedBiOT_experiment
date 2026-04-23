@@ -36,6 +36,38 @@ def l2_norm(output_student_float, output_teacher_float):
     return (output_teacher_float - output_student_float).div(std).pow(2).mean()
 
 
+def _get_module_device(module):
+    for param in module.parameters(recurse=True):
+        return param.device
+
+    for buffer in module.buffers(recurse=True):
+        return buffer.device
+
+    return None
+
+
+def _move_to_device(data, device):
+    if device is None:
+        return data
+
+    if torch.is_tensor(data):
+        return data.to(device)
+
+    if isinstance(data, tuple):
+        return tuple(_move_to_device(item, device) for item in data)
+
+    if isinstance(data, list):
+        return [_move_to_device(item, device) for item in data]
+
+    if isinstance(data, dict):
+        return {
+            key: _move_to_device(value, device)
+            for key, value in data.items()
+        }
+
+    return data
+
+
 def get_kd_loss(loss_fn, raw_model, adap_model, layerwise_distill=False):
     """
     This function is borrowed from offsite-tuning:
@@ -60,7 +92,12 @@ def get_kd_loss(loss_fn, raw_model, adap_model, layerwise_distill=False):
             teacher_outputs = [0] * len(student_teacher_map)
 
         for i, teacher_layer in enumerate(raw_model.teacher):
-            output_teacher = teacher_layer(output_teacher, *args, **kwargs)
+            teacher_device = _get_module_device(teacher_layer)
+            teacher_args = _move_to_device(args, teacher_device)
+            teacher_kwargs = _move_to_device(kwargs, teacher_device)
+            output_teacher = _move_to_device(output_teacher, teacher_device)
+            output_teacher = teacher_layer(output_teacher, *teacher_args,
+                                           **teacher_kwargs)
             if isinstance(output_teacher, tuple):
                 output_teacher = output_teacher[0]
             if layerwise_distill and (i in student_teacher_map):
@@ -74,16 +111,24 @@ def get_kd_loss(loss_fn, raw_model, adap_model, layerwise_distill=False):
 
         for layer, output_teacher_float in zip(adap_model.student,
                                                teacher_outputs):
-            output_student = layer(output_student, *args, **kwargs)
+            student_device = _get_module_device(layer)
+            student_args = _move_to_device(args, student_device)
+            student_kwargs = _move_to_device(kwargs, student_device)
+            output_student = _move_to_device(output_student, student_device)
+            output_student = layer(output_student, *student_args,
+                                   **student_kwargs)
             if isinstance(output_student, tuple):
                 output_student = output_student[0]
             output_student_float = output_student.float()
+            output_teacher_float = output_teacher_float.to(
+                output_student_float.device)
             kd_loss += loss_fn(output_student_float, output_teacher_float)
 
         adap_model.student.train(mode=adap_model_training_state)
     else:
         output_student_float = adap_model.student_r.cached_output.float()
-        output_teacher_float = output_teacher.float()
+        output_teacher_float = output_teacher.float().to(
+            output_student_float.device)
         kd_loss = loss_fn(output_student_float, output_teacher_float)
 
     return kd_loss
@@ -297,6 +342,8 @@ class OTTrainer_server(LLMTrainer):
                 f'{self.cfg.llm.offsite_tuning.emu_align.sim_loss}' +
                 '. Set to zero')
             gap_loss_l2 = 0.
+        if torch.is_tensor(gap_loss_l2) and torch.is_tensor(gap_loss_kl):
+            gap_loss_kl = gap_loss_kl.to(gap_loss_l2.device)
         # gap_loss = gap_loss_l2
         # gap_loss = gap_loss_l2 + self.kd_loss_weight * gap_loss_kl
         gap_loss = gap_loss_l2 + self.kd_loss_weight * gap_loss_kl
