@@ -222,8 +222,7 @@ class OTTrainer_server(LLMTrainer):
         super()._hook_on_fit_start_init(ctx)
 
         if ctx.cfg.llm.accelerator.use:
-            raw_model_device_map = self._get_model_device_map(ctx.model)
-            self.ctx.raw_model.sharding(device_map=raw_model_device_map)
+            self.ctx.raw_model.sharding()
 
     # def _hook_on_fit_start_numerical_precision(self, ctx):
     #     super(OTTrainer_server,
