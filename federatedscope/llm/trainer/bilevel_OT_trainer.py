@@ -390,8 +390,11 @@ class OTTrainer_client(LLMTrainer):
             config.llm.offsite_tuning.emu_align.train.lm_loss_weight
 
     def train(self, target_data_split_name="train", hooks_set=None):
-        self.ctx.init_adap = copy.deepcopy(
-            merged_lora_state_dict(self.ctx.model.adapter))
+        self.ctx.init_adap = {
+            key: value.detach().cpu().clone()
+            for key, value in merged_lora_state_dict(
+                self.ctx.model.adapter).items()
+        }
         num_samples, model_para_all, eval_metrics = \
             super(OTTrainer_client, self).train(target_data_split_name,
                                                 hooks_set)
@@ -420,7 +423,7 @@ class OTTrainer_client(LLMTrainer):
 
         # regularization loss between original and current adapters
         if hasattr(self.ctx, 'init_adap'):
-            reg_loss = 0.0
+            reg_loss = loss.new_tensor(0.0)
 
             # logger.info(ctx.model.adapter)
             # for name, mod in ctx.model.adapter.named_modules():
@@ -429,7 +432,10 @@ class OTTrainer_client(LLMTrainer):
             for init_adap_param, cur_adap_param in zip(
                     self.ctx.init_adap.values(),
                     merged_lora_state_dict(ctx.model.adapter).values()):
-                reg_loss += torch.sum((init_adap_param - cur_adap_param)**2)
+                cur_device = cur_adap_param.device
+                reg_term = torch.sum(
+                    (init_adap_param.to(cur_device) - cur_adap_param)**2)
+                reg_loss = reg_loss + reg_term.to(loss.device)
 
             loss = loss + self.lm_loss_weight * reg_loss
 
