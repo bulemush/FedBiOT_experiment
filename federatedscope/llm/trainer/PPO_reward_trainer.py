@@ -88,7 +88,7 @@ class PPORewardTrainer(LLMTrainer):
         if ctx.skip_this_batch:
             return
 
-        if ctx.cfg.llm.accelerator.use:
+        if self._use_accelerator_wrapper(ctx):
             self.accelerator.backward(ctx.loss_task)
             ctx.optimizer.step()
             if ctx.scheduler is not None:

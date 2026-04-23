@@ -79,7 +79,8 @@ class KDTrainer(LLMTrainer):
         super(KDTrainer, self).__init__(adapter_model, data, device, config,
                                         only_for_eval, monitor)
         self.ctx.raw_model = raw_model
-        if not self._model_has_device_map(self.ctx.raw_model):
+        if not config.llm.accelerator.use and \
+                not self._model_has_device_map(self.ctx.raw_model):
             self.ctx.raw_model = self.ctx.raw_model.to(device)
         self.lm_loss_weight = \
             config.llm.offsite_tuning.emu_align.train.lm_loss_weight
@@ -90,6 +91,13 @@ class KDTrainer(LLMTrainer):
         super(KDTrainer, self)._hook_on_fit_start_numerical_precision(ctx)
         # if self.cfg.train.is_enable_half:
         #     ctx.raw_model.to(torch.bfloat16)
+
+    def _hook_on_fit_start_init(self, ctx):
+        super()._hook_on_fit_start_init(ctx)
+
+        if ctx.cfg.llm.accelerator.use:
+            raw_model_device_map = self._get_model_device_map(ctx.model)
+            self.ctx.raw_model.sharding(device_map=raw_model_device_map)
 
     def train(self, target_data_split_name="train", hooks_set=None):
         num_samples, model_para_all, eval_metrics = \

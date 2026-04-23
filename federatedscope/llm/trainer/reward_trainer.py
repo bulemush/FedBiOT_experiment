@@ -40,6 +40,7 @@ def _get_batch_logps(logits, labels, average_log_prob=False):
         A tensor of shape (batch_size,) containing the average/sum
             log probabilities of the given labels under the given logits.
     """
+    labels = labels.to(logits.device)
     assert logits.shape[:-1] == labels.shape
 
     labels = labels[:, 1:].clone()
@@ -246,7 +247,7 @@ class DPORewardTrainer(LLMTrainer):
         if ctx.skip_this_batch:
             return
 
-        if ctx.cfg.llm.accelerator.use:
+        if self._use_accelerator_wrapper(ctx):
             self.accelerator.backward(ctx.loss_task)
             ctx.optimizer.step()
             if ctx.scheduler is not None:
