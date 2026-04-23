@@ -81,6 +81,85 @@ class LLMTrainer(GeneralTorchTrainer):
         self.register_hook_in_eval(self._hook_on_fit_end_free_space,
                                    "on_fit_end")
 
+    @staticmethod
+    def _as_torch_device(device):
+        if isinstance(device, torch.device):
+            return device
+        if isinstance(device, int):
+            return torch.device(f'cuda:{device}')
+        return torch.device(device)
+
+    def _model_has_device_map(self, model):
+        model = getattr(model, 'module', model)
+        model = getattr(model, 'model', model)
+        return hasattr(model, 'hf_device_map')
+
+    def _model_uses_multiple_devices(self, model):
+        model = getattr(model, 'module', model)
+        if isinstance(model, AdapterModel):
+            return model.is_model_parallel()
+
+        model = getattr(model, 'model', model)
+        device_map = getattr(model, 'hf_device_map', None)
+        if isinstance(device_map, dict):
+            active_devices = {
+                str(device)
+                for device in device_map.values()
+                if str(device) not in ['cpu', 'disk', 'meta']
+            }
+            if len(active_devices) > 1:
+                return True
+
+        try:
+            active_devices = {
+                str(param.device)
+                for param in model.parameters()
+                if param.device.type != 'cpu'
+            }
+        except RuntimeError:
+            return False
+
+        return len(active_devices) > 1
+
+    def _get_model_input_device(self, model):
+        model = getattr(model, 'module', model)
+        if isinstance(model, AdapterModel):
+            return model.get_input_device()
+
+        try:
+            input_embeddings = model.get_input_embeddings()
+        except AttributeError:
+            input_embeddings = None
+
+        if input_embeddings is not None and hasattr(input_embeddings,
+                                                    'weight'):
+            return input_embeddings.weight.device
+
+        for param in model.parameters():
+            return param.device
+
+        return torch.device('cpu')
+
+    def _get_batch_device(self, ctx, model=None):
+        if ctx.cfg.llm.deepspeed.use:
+            return self._as_torch_device(ctx.device)
+
+        model = ctx.model if model is None else model
+        if self._model_has_device_map(model) or \
+                self._model_uses_multiple_devices(model):
+            return self._get_model_input_device(model)
+
+        return self._as_torch_device(ctx.device)
+
+    def _prepare_batch_inputs(self, ctx, keys, model=None):
+        batch_device = self._get_batch_device(ctx, model=model)
+        return [ctx.data_batch[key].to(batch_device) for key in keys]
+
+    def _release_batch_tensors(self, ctx):
+        for key, value in ctx.data_batch.items():
+            if torch.is_tensor(value):
+                ctx.data_batch[key] = value.cpu()
+
     @lifecycle(LIFECYCLE.BATCH)
     def _run_batch(self, hooks_set, run_step=-1):
         if self.ctx.cur_mode in [MODE.TRAIN, MODE.FINETUNE]:
@@ -191,7 +270,8 @@ class LLMTrainer(GeneralTorchTrainer):
 
         else:
             # prepare model and optimizer
-            ctx.model.to(ctx.device)
+            if not self._model_has_device_map(ctx.model):
+                ctx.model.to(ctx.device)
             if ctx.cur_mode in [MODE.TRAIN, MODE.FINETUNE]:
                 # Initialize optimizer here to avoid the reuse of optimizers
                 # across different routines
@@ -220,26 +300,15 @@ class LLMTrainer(GeneralTorchTrainer):
                     ReIterator(ctx.get("{}_loader".format(ctx.cur_split))))
 
     def _hook_on_batch_forward(self, ctx):
-        if ctx.cfg.llm.accelerator.use:
-            input_ids = ctx.data_batch['input_ids']
-            labels = ctx.data_batch['labels']
-            attention_mask = ctx.data_batch['attention_mask']
-            outputs = ctx.model(input_ids=input_ids,
-                                labels=labels,
-                                attention_mask=attention_mask)
+        input_ids, labels, attention_mask = self._prepare_batch_inputs(
+            ctx, ['input_ids', 'labels', 'attention_mask'])
 
-        elif ctx.cfg.llm.deepspeed.use:
-            input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-            labels = ctx.data_batch['labels'].to(ctx.device)
-            attention_mask = ctx.data_batch['attention_mask'].to(ctx.device)
+        if ctx.cfg.llm.deepspeed.use:
             outputs = ctx.model_engine(input_ids=input_ids,
                                        labels=labels,
                                        attention_mask=attention_mask)
 
         else:
-            input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-            labels = ctx.data_batch['labels'].to(ctx.device)
-            attention_mask = ctx.data_batch['attention_mask'].to(ctx.device)
             outputs = ctx.model(input_ids=input_ids,
                                 labels=labels,
                                 attention_mask=attention_mask)
@@ -291,9 +360,7 @@ class LLMTrainer(GeneralTorchTrainer):
                 ctx.optimizer.zero_grad()
 
         # move the training data to cpu
-        ctx.data_batch['input_ids'].cpu()
-        ctx.data_batch['labels'].cpu()
-        ctx.data_batch['attention_mask'].cpu()
+        self._release_batch_tensors(ctx)
 
     def _hook_on_batch_end(self, ctx):
         if ctx.skip_this_batch:
@@ -370,10 +437,9 @@ class LLMTrainer(GeneralTorchTrainer):
         if self.cfg.eval.count_flops and ctx.monitor.flops_per_sample == 0:
             # calculate the flops_per_sample
             try:
-                input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-                labels = ctx.data_batch['labels'].to(ctx.device)
-                attention_mask = ctx.data_batch['attention_mask'].to(
-                    ctx.device)
+                input_ids, labels, attention_mask = \
+                    self._prepare_batch_inputs(
+                        ctx, ['input_ids', 'labels', 'attention_mask'])
                 from fvcore.nn import FlopCountAnalysis
                 if isinstance(ctx.model, AdapterModel):
                     flops_one_batch = FlopCountAnalysis(

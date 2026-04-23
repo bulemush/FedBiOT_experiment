@@ -65,26 +65,15 @@ class RewardChoiceTrainer(LLMTrainer):
         ctx.ys_pred = CtxVar([], LIFECYCLE.ROUTINE)
 
     def _hook_on_batch_forward(self, ctx):
-        if ctx.cfg.llm.accelerator.use:
-            input_ids = ctx.data_batch['input_ids']
-            labels = ctx.data_batch['labels']
-            attention_mask = ctx.data_batch['attention_mask']
-            outputs = ctx.model(input_ids=input_ids,
-                                labels=labels,
-                                attention_mask=attention_mask)
+        input_ids, labels, attention_mask = self._prepare_batch_inputs(
+            ctx, ['input_ids', 'labels', 'attention_mask'])
 
-        elif ctx.cfg.llm.deepspeed.use:
-            input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-            labels = ctx.data_batch['labels'].to(ctx.device)
-            attention_mask = ctx.data_batch['attention_mask'].to(ctx.device)
+        if ctx.cfg.llm.deepspeed.use:
             outputs = ctx.model_engine(input_ids=input_ids,
                                        labels=labels,
                                        attention_mask=attention_mask)
 
         else:
-            input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-            labels = ctx.data_batch['labels'].to(ctx.device)
-            attention_mask = ctx.data_batch['attention_mask'].to(ctx.device)
             outputs = ctx.model(input_ids=input_ids,
                                 labels=labels,
                                 attention_mask=attention_mask)

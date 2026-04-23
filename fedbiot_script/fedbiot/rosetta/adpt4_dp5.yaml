@@ -4,6 +4,7 @@ early_stop:
   patience: 0
 federate:
   mode: standalone
+  process_num: 1
   client_num: 9
   total_round_num: 500
   save_to: "checkpoints/llama.rosetta.adpt4.dp5.lr1.fedbiot.ckpt"
@@ -18,6 +19,10 @@ data:
 llm:
   grad_accum_step: 2
   tok_len: 650
+  accelerator:
+    use: True
+  deepspeed:
+    use: False
   chat:
     max_len: 1000
   adapter:
@@ -48,6 +53,7 @@ model:
 train:
   local_update_steps: 30
   batch_or_epoch: batch
+  data_para_dids: []
   optimizer:
     type: AdamW
     lr: 0.0001

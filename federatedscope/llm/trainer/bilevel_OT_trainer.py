@@ -197,7 +197,9 @@ class OTTrainer_server(LLMTrainer):
             self.ctx.raw_model = raw_model
             self.ctx.raw_model.sharding()
         else:
-            self.ctx.raw_model = raw_model.to(device)
+            self.ctx.raw_model = raw_model
+            if not self._model_has_device_map(self.ctx.raw_model):
+                self.ctx.raw_model = self.ctx.raw_model.to(device)
         self.kd_loss_weight = \
             config.llm.offsite_tuning.emu_align.train.kd_loss_weight
         self.layerwise_distill = \
@@ -224,7 +226,8 @@ class OTTrainer_server(LLMTrainer):
     #         ctx.raw_model.to(torch.bfloat16)
 
     def train(self, target_data_split_name="train", hooks_set=None):
-        if not self.cfg.llm.accelerator.use:
+        if not self.cfg.llm.accelerator.use and \
+                not self._model_has_device_map(self.ctx.raw_model):
             self.ctx.raw_model.to(self.ctx.device)
         num_samples, model_para_all, eval_metrics = \
             super(OTTrainer_server, self).train(target_data_split_name,
@@ -234,9 +237,8 @@ class OTTrainer_server(LLMTrainer):
         return num_samples, model_para_all, eval_metrics
 
     def _hook_on_batch_forward(self, ctx):
-        input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-        labels = ctx.data_batch['labels'].to(ctx.device)
-        attention_mask = ctx.data_batch['attention_mask'].to(ctx.device)
+        input_ids, labels, attention_mask = self._prepare_batch_inputs(
+            ctx, ['input_ids', 'labels', 'attention_mask'])
 
         # ctx.model.eval()
         # logger.info(ctx.model.state_dict().keys())
@@ -342,9 +344,8 @@ class OTTrainer_client(LLMTrainer):
         return num_samples, model_para_all, eval_metrics
 
     def _hook_on_batch_forward(self, ctx):
-        input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-        labels = ctx.data_batch['labels'].to(ctx.device)
-        attention_mask = ctx.data_batch['attention_mask'].to(ctx.device)
+        input_ids, labels, attention_mask = self._prepare_batch_inputs(
+            ctx, ['input_ids', 'labels', 'attention_mask'])
 
         outputs = ctx.model(input_ids=input_ids,
                             labels=labels,
