@@ -36,34 +36,14 @@ class PPORewardTrainer(LLMTrainer):
         ctx.ys_pred = CtxVar([], LIFECYCLE.ROUTINE)
 
     def _hook_on_batch_forward(self, ctx):
-        if ctx.cfg.llm.accelerator.use:
-            win_input_ids = ctx.data_batch['win_input_ids'].to(ctx.device)
-            win_labels = ctx.data_batch['win_labels'].to(ctx.device)
-            win_attention_mask = ctx.data_batch['win_attention_mask'].to(
-                ctx.device)
-            lose_input_ids = ctx.data_batch['lose_input_ids'].to(ctx.device)
-            lose_labels = ctx.data_batch['lose_labels'].to(ctx.device)
-            lose_attention_mask = ctx.data_batch['lose_attention_mask'].to(
-                ctx.device)
+        win_input_ids, win_labels, win_attention_mask, lose_input_ids, \
+            lose_labels, lose_attention_mask = self._prepare_batch_inputs(
+                ctx, [
+                    'win_input_ids', 'win_labels', 'win_attention_mask',
+                    'lose_input_ids', 'lose_labels', 'lose_attention_mask'
+                ])
 
-            win_outputs = ctx.model(input_ids=win_input_ids,
-                                    attention_mask=win_attention_mask)
-            lose_outputs = ctx.model(input_ids=lose_input_ids,
-                                     attention_mask=lose_attention_mask)
-
-            win_rewards = win_outputs.logits
-            lose_rewards = lose_outputs.logits
-
-        elif ctx.cfg.llm.deepspeed.use:
-            win_input_ids = ctx.data_batch['win_input_ids'].to(ctx.device)
-            win_labels = ctx.data_batch['win_labels'].to(ctx.device)
-            win_attention_mask = ctx.data_batch['win_attention_mask'].to(
-                ctx.device)
-            lose_input_ids = ctx.data_batch['lose_input_ids'].to(ctx.device)
-            lose_labels = ctx.data_batch['lose_labels'].to(ctx.device)
-            lose_attention_mask = ctx.data_batch['lose_attention_mask'].to(
-                ctx.device)
-
+        if ctx.cfg.llm.deepspeed.use:
             win_outputs = ctx.model_engine(input_ids=win_input_ids,
                                            attention_mask=win_attention_mask)
             lose_outputs = ctx.model_engine(input_ids=lose_input_ids,
@@ -73,15 +53,6 @@ class PPORewardTrainer(LLMTrainer):
             lose_rewards = lose_outputs.logits
 
         else:
-            win_input_ids = ctx.data_batch['win_input_ids'].to(ctx.device)
-            win_labels = ctx.data_batch['win_labels'].to(ctx.device)
-            win_attention_mask = ctx.data_batch['win_attention_mask'].to(
-                ctx.device)
-            lose_input_ids = ctx.data_batch['lose_input_ids'].to(ctx.device)
-            lose_labels = ctx.data_batch['lose_labels'].to(ctx.device)
-            lose_attention_mask = ctx.data_batch['lose_attention_mask'].to(
-                ctx.device)
-
             win_outputs = ctx.model(input_ids=win_input_ids,
                                     attention_mask=win_attention_mask)
             lose_outputs = ctx.model(input_ids=lose_input_ids,
@@ -143,12 +114,7 @@ class PPORewardTrainer(LLMTrainer):
                 ctx.optimizer.zero_grad()
 
         # move the training data to cpu
-        ctx.data_batch['win_input_ids'].cpu()
-        ctx.data_batch['win_labels'].cpu()
-        ctx.data_batch['win_attention_mask'].cpu()
-        ctx.data_batch['lose_input_ids'].cpu()
-        ctx.data_batch['lose_labels'].cpu()
-        ctx.data_batch['lose_attention_mask'].cpu()
+        self._release_batch_tensors(ctx)
 
     def _hook_on_batch_end(self, ctx):
         # update statistics

@@ -78,7 +78,9 @@ class KDTrainer(LLMTrainer):
                  monitor=None):
         super(KDTrainer, self).__init__(adapter_model, data, device, config,
                                         only_for_eval, monitor)
-        self.ctx.raw_model = raw_model.to(device)
+        self.ctx.raw_model = raw_model
+        if not self._model_has_device_map(self.ctx.raw_model):
+            self.ctx.raw_model = self.ctx.raw_model.to(device)
         self.lm_loss_weight = \
             config.llm.offsite_tuning.emu_align.train.lm_loss_weight
         self.kd_loss_weight = \
@@ -97,9 +99,8 @@ class KDTrainer(LLMTrainer):
         return num_samples, model_para_all, eval_metrics
 
     def _hook_on_batch_forward(self, ctx):
-        input_ids = ctx.data_batch['input_ids'].to(ctx.device)
-        labels = ctx.data_batch['labels'].to(ctx.device)
-        attention_mask = ctx.data_batch['attention_mask'].to(ctx.device)
+        input_ids, labels, attention_mask = self._prepare_batch_inputs(
+            ctx, ['input_ids', 'labels', 'attention_mask'])
 
         outputs = ctx.model(input_ids=input_ids,
                             labels=labels,

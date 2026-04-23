@@ -283,6 +283,38 @@ class AdapterModel(nn.Module):
             )
         self.model = dispatch_model(self.model, device_map=self.device_map)
 
+    def get_input_device(self):
+        input_embeddings = self.get_input_embeddings()
+        if hasattr(input_embeddings, 'weight'):
+            return input_embeddings.weight.device
+
+        for param in self.model.parameters():
+            return param.device
+
+        return torch.device('cpu')
+
+    def is_model_parallel(self):
+        device_map = getattr(self.model, 'hf_device_map', None)
+        if isinstance(device_map, dict):
+            active_devices = {
+                str(device)
+                for device in device_map.values()
+                if str(device) not in ['cpu', 'disk', 'meta']
+            }
+            if len(active_devices) > 1:
+                return True
+
+        try:
+            active_devices = {
+                str(param.device)
+                for param in self.model.parameters()
+                if param.device.type != 'cpu'
+            }
+        except RuntimeError:
+            return False
+
+        return len(active_devices) > 1
+
     def print_model_map(self):
         for i in self.model.named_parameters():
             logger.info(f"{i[0]} -> {i[1].device}")
