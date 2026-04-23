@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def cal_loss(logits, labels, choices):
+    labels = labels.to(logits.device)
     shift_logits = logits[..., :-1, :].contiguous()
     shift_labels = labels[..., 1:].contiguous()
 

@@ -121,6 +121,18 @@ class LLMTrainer(GeneralTorchTrainer):
 
         return len(active_devices) > 1
 
+    def _get_model_device_map(self, model):
+        model = getattr(model, 'module', model)
+        if isinstance(model, AdapterModel):
+            return model.get_device_map()
+
+        model = getattr(model, 'model', model)
+        device_map = getattr(model, 'hf_device_map', None)
+        if isinstance(device_map, dict):
+            return dict(device_map)
+
+        return None
+
     def _get_model_input_device(self, model):
         model = getattr(model, 'module', model)
         if isinstance(model, AdapterModel):
@@ -160,6 +172,11 @@ class LLMTrainer(GeneralTorchTrainer):
             if torch.is_tensor(value):
                 ctx.data_batch[key] = value.cpu()
 
+    def _use_accelerator_wrapper(self, ctx):
+        return hasattr(self, 'accelerator') and self.accelerator is not None \
+            and not self._model_has_device_map(ctx.model) \
+            and not self._model_uses_multiple_devices(ctx.model)
+
     @lifecycle(LIFECYCLE.BATCH)
     def _run_batch(self, hooks_set, run_step=-1):
         if self.ctx.cur_mode in [MODE.TRAIN, MODE.FINETUNE]:
@@ -175,7 +192,7 @@ class LLMTrainer(GeneralTorchTrainer):
         for batch_i in range(run_step):
             self.ctx.cur_batch_i = CtxVar(batch_i, LIFECYCLE.BATCH)
 
-            if hasattr(self, 'accelerator'):
+            if self._use_accelerator_wrapper(self.ctx):
                 # Build gradient accumulation upon accelerator
                 for _ in range(grad_accum_step):
                     with self.accelerator.accumulate(self.ctx.model):
@@ -239,16 +256,17 @@ class LLMTrainer(GeneralTorchTrainer):
                 ctx.scheduler = get_scheduler(
                     ctx.optimizer, **ctx.cfg[ctx.cur_mode].scheduler)
 
-            ctx.model, ctx.optimizer, ctx.train_loader, \
-                ctx.val_loader, ctx.test_loader, ctx.scheduler = \
-                self.accelerator.prepare(
-                    ctx.model,
-                    getattr(ctx, 'optimizer', None),
-                    getattr(ctx, 'train_loader', None),
-                    getattr(ctx, 'val_loader', None),
-                    getattr(ctx, 'test_loader', None),
-                    getattr(ctx, 'scheduler', None)
-                )
+            if self._use_accelerator_wrapper(ctx):
+                ctx.model, ctx.optimizer, ctx.train_loader, \
+                    ctx.val_loader, ctx.test_loader, ctx.scheduler = \
+                    self.accelerator.prepare(
+                        ctx.model,
+                        getattr(ctx, 'optimizer', None),
+                        getattr(ctx, 'train_loader', None),
+                        getattr(ctx, 'val_loader', None),
+                        getattr(ctx, 'test_loader', None),
+                        getattr(ctx, 'scheduler', None)
+                    )
 
         elif ctx.cfg.llm.deepspeed.use:
             # Enable deepspeed
@@ -334,7 +352,7 @@ class LLMTrainer(GeneralTorchTrainer):
         if ctx.skip_this_batch:
             return
 
-        if ctx.cfg.llm.accelerator.use:
+        if self._use_accelerator_wrapper(ctx):
             self.accelerator.backward(ctx.loss_task)
             ctx.optimizer.step()
             if ctx.scheduler is not None:

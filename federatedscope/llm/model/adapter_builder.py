@@ -268,8 +268,25 @@ class AdapterModel(nn.Module):
             ckpt = {'cur_round': state, 'model': self.model.state_dict()}
         torch.save(ckpt, path)
 
-    def sharding(self):
-        if hasattr(self, 'device_map') is False:
+    def get_device_map(self):
+        if hasattr(self, 'device_map'):
+            return dict(self.device_map)
+
+        device_map = getattr(self.model, 'hf_device_map', None)
+        if isinstance(device_map, dict):
+            return dict(device_map)
+
+        return None
+
+    def sharding(self, device_map=None):
+        if device_map is not None:
+            self.device_map = dict(device_map)
+        elif hasattr(self, 'device_map') is False:
+            current_map = getattr(self.model, 'hf_device_map', None)
+            if isinstance(current_map, dict):
+                self.device_map = dict(current_map)
+                return
+
             max_memory = get_balanced_memory(
                 self.model,
                 max_memory=None,
@@ -281,6 +298,11 @@ class AdapterModel(nn.Module):
                 max_memory=max_memory,
                 no_split_module_classes=self.model_unit,
             )
+
+        current_map = getattr(self.model, 'hf_device_map', None)
+        if isinstance(current_map, dict) and current_map == self.device_map:
+            return
+
         self.model = dispatch_model(self.model, device_map=self.device_map)
 
     def get_input_device(self):
