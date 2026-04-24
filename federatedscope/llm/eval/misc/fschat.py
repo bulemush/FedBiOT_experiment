@@ -64,6 +64,75 @@ class FSChatBot(object):
         else:
             self.next_model()
 
+    @staticmethod
+    def _unwrap_model(model):
+        while hasattr(model, 'model'):
+            model = model.model
+        return model
+
+    def _model_has_device_map(self):
+        model = self._unwrap_model(self.model)
+        return isinstance(getattr(model, 'hf_device_map', None), dict)
+
+    def _model_uses_multiple_devices(self):
+        if hasattr(self.model, 'is_model_parallel'):
+            try:
+                return self.model.is_model_parallel()
+            except RuntimeError:
+                return False
+
+        model = self._unwrap_model(self.model)
+        device_map = getattr(model, 'hf_device_map', None)
+        if isinstance(device_map, dict):
+            active_devices = {
+                str(device)
+                for device in device_map.values()
+                if str(device) not in ['cpu', 'disk', 'meta']
+            }
+            if len(active_devices) > 1:
+                return True
+
+        try:
+            active_devices = {
+                str(param.device)
+                for param in model.parameters()
+                if param.device.type != 'cpu'
+            }
+        except RuntimeError:
+            return False
+
+        return len(active_devices) > 1
+
+    def _get_model_input_device(self):
+        if hasattr(self.model, 'get_input_device'):
+            return self.model.get_input_device()
+
+        model = self._unwrap_model(self.model)
+        try:
+            input_embeddings = model.get_input_embeddings()
+        except AttributeError:
+            input_embeddings = None
+
+        if input_embeddings is not None and hasattr(input_embeddings,
+                                                    'weight'):
+            return input_embeddings.weight.device
+
+        for param in model.parameters():
+            return param.device
+
+        return torch.device('cpu')
+
+    def _prepare_inference_model(self):
+        if not self._model_has_device_map() and \
+                not self._model_uses_multiple_devices():
+            self.model = self.model.to(self.device)
+
+        self.model = self.model.eval()
+        if torch.__version__ >= "2" and sys.platform != "win32" and \
+                not self._model_has_device_map() and \
+                not self._model_uses_multiple_devices():
+            self.model = torch.compile(self.model)
+
     def use_raw_model(self):
         if hasattr(self, 'model'):
             delattr(self, 'model')
@@ -79,10 +148,7 @@ class FSChatBot(object):
         logger.info("will use raw model.")
         print("will use raw model.")
 
-        self.model = self.model.to(self.device + 1)
-        self.model = self.model.eval()
-        if torch.__version__ >= "2" and sys.platform != "win32":
-            self.model = torch.compile(self.model)
+        self._prepare_inference_model()
 
         self.max_history_len = self.config.llm.chat.max_history_len
         self.max_len = self.config.llm.chat.max_len
@@ -139,10 +205,7 @@ class FSChatBot(object):
         else:
             raise ValueError('No more model is able to us')
 
-        self.model.to('cuda:0')
-        self.model = self.model.eval()
-        if torch.__version__ >= "2" and sys.platform != "win32":
-            self.model = torch.compile(self.model)
+        self._prepare_inference_model()
 
         # # Create the generation pipeline
         # self.generation_pipe = pipeline('text-generation',
@@ -171,7 +234,7 @@ class FSChatBot(object):
         else:
             input_ids.extend(text_ids)
         input_ids = torch.tensor(input_ids).long()
-        input_ids = input_ids.unsqueeze(0).to(self.device)
+        input_ids = input_ids.unsqueeze(0).to(self._get_model_input_device())
         response = self.model.generate(input_ids=input_ids,
                                        max_new_tokens=self.max_len,
                                        num_beams=4,
@@ -194,7 +257,7 @@ class FSChatBot(object):
             padding=True,
             add_special_tokens=True,
             return_tensors="pt",
-        ).to("cuda:0")
+        ).to(self._get_model_input_device())
 
         output_ids = self.model.generate(**input_text_tokens,
                                          **generate_kwargs)
