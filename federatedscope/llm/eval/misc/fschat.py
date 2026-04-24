@@ -137,6 +137,17 @@ class FSChatBot(object):
                 not self._model_uses_multiple_devices():
             self.model = torch.compile(self.model)
 
+    def _normalize_generate_kwargs(self, generate_kwargs):
+        normalized_kwargs = dict(generate_kwargs)
+        if self._model_has_device_map() or self._model_uses_multiple_devices():
+            if normalized_kwargs.get('num_beams', 1) > 1:
+                logger.info('Model parallel inference detected, set '
+                            '`num_beams=1` to avoid cross-device beam '
+                            'search states.')
+                normalized_kwargs['num_beams'] = 1
+                normalized_kwargs.pop('early_stopping', None)
+        return normalized_kwargs
+
     def use_raw_model(self):
         if hasattr(self, 'model'):
             delattr(self, 'model')
@@ -239,12 +250,14 @@ class FSChatBot(object):
             input_ids.extend(text_ids)
         input_ids = torch.tensor(input_ids).long()
         input_ids = input_ids.unsqueeze(0).to(self._get_model_input_device())
-        response = self.model.generate(input_ids=input_ids,
-                                       max_new_tokens=self.max_len,
-                                       num_beams=4,
-                                       no_repeat_ngram_size=2,
-                                       early_stopping=True,
-                                       temperature=0.2)
+        generate_kwargs = self._normalize_generate_kwargs({
+            'max_new_tokens': self.max_len,
+            'num_beams': 4,
+            'no_repeat_ngram_size': 2,
+            'early_stopping': True,
+            'temperature': 0.2,
+        })
+        response = self.model.generate(input_ids=input_ids, **generate_kwargs)
 
         self.history.append(response[0].tolist())
         response_tokens = \
@@ -256,6 +269,7 @@ class FSChatBot(object):
     def generate(self,
                  input_texts: list[str],
                  generate_kwargs={}) -> list[list[str]]:
+        generate_kwargs = self._normalize_generate_kwargs(generate_kwargs)
         input_text_tokens = self.tokenizer(
             input_texts,
             padding=True,
