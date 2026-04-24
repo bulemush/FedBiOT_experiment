@@ -125,7 +125,11 @@ class FSChatBot(object):
     def _prepare_inference_model(self):
         if not self._model_has_device_map() and \
                 not self._model_uses_multiple_devices():
-            self.model = self.model.to(self.device)
+            if torch.cuda.is_available() and torch.cuda.device_count() > 1 \
+                    and hasattr(self.model, 'sharding'):
+                self.model.sharding()
+            else:
+                self.model = self.model.to(self.device)
 
         self.model = self.model.eval()
         if torch.__version__ >= "2" and sys.platform != "win32" and \
@@ -143,7 +147,7 @@ class FSChatBot(object):
         self.tokenizer, _ = get_tokenizer(model_name, self.config.data.root,
                                           self.config.llm.tok_len)
 
-        self.model = get_llm(self.config, device_map='auto')
+        self.model = get_llm(self.config)
 
         logger.info("will use raw model.")
         print("will use raw model.")
@@ -163,7 +167,7 @@ class FSChatBot(object):
         self.tokenizer, _ = get_tokenizer(model_name, self.config.data.root,
                                           self.config.llm.tok_len)
 
-        self.model = get_llm(self.config, device_map='auto')
+        self.model = get_llm(self.config)
         self.generation_config = GenerationConfig.from_pretrained(model_name)
         logger.info(f'{model_name} default generation setting: '
                     f'{self.generation_config}')
