@@ -44,7 +44,7 @@ llm:
         lm_loss_weight: 1.0
         kd_loss_weight: 0.0
 dataloader:
-  batch_size: 1
+  batch_size: 4
 model:
   type: '/home/async/data-disk/wgh/FedBiOT_experiment/federatedscope/llm/data/models/Llama-2-7b-hf@huggingface_llm'
 train:
