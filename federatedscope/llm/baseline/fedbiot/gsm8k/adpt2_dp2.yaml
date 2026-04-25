@@ -5,7 +5,7 @@ early_stop:
 federate:
   mode: standalone
   client_num: 3
-  total_round_num: 500
+  total_round_num: 400
   save_to: "checkpoints/llama.gsm8k.adpt2.dp2.lr1.fedbiot.ckpt"
   save_freq: 100
   share_local_model: True
@@ -36,7 +36,9 @@ llm:
       sim_loss: 'l2'
       layerwise_distill: False
       kl_divergence: 'raw'
+      init_enable_ground_truth: False
       train:
+        enable_ground_truth: False      
         local_update_steps: 5
         initial_update_rounds: 50
         lm_loss_weight: 1.0
@@ -44,7 +46,7 @@ llm:
 dataloader:
   batch_size: 5
 model:
-  type: 'meta-llama/Llama-2-7b-hf@huggingface_llm'
+  type: '/home/async/data-disk/wgh/FedBiOT_experiment/federatedscope/llm/data/models/Llama-2-7b-hf@huggingface_llm'
 train:
   local_update_steps: 30
   batch_or_epoch: batch
