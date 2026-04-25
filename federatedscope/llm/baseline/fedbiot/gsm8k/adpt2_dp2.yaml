@@ -5,7 +5,7 @@ early_stop:
 federate:
   mode: standalone
   client_num: 3
-  total_round_num: 400
+  total_round_num: 500
   save_to: "checkpoints/llama.gsm8k.adpt2.dp2.lr1.fedbiot.ckpt"
   save_freq: 100
   share_local_model: True
