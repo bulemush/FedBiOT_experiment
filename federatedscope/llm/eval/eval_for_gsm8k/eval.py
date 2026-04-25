@@ -27,6 +27,20 @@ DEBUG = False
 ANSWER_TRIGGER = "The answer is"
 
 
+def normalize_model_completion(model_pred):
+    if isinstance(model_pred, str):
+        return model_pred
+
+    if isinstance(model_pred, (list, tuple)):
+        for item in model_pred:
+            normalized = normalize_model_completion(item)
+            if normalized:
+                return normalized
+        return ""
+
+    return str(model_pred)
+
+
 def extract_answer_from_output(completion):
     match = ANS_RE.search(completion)
     if match:
@@ -148,6 +162,7 @@ def build_prompt(input_text, n_shot, cot_flag, demo_required=False):
 
 
 def clean_answer(model_pred):
+    model_pred = normalize_model_completion(model_pred)
     model_pred = model_pred.lower()
     preds = model_pred.split(ANSWER_TRIGGER.lower())
     answer_flag = True if len(preds) > 1 else False
@@ -216,6 +231,7 @@ def main():
         input_text = build_prompt(sample['instruction'], N_SHOT, COT_FLAG)
         generate_kwargs = dict(max_new_tokens=256, top_p=0.95, temperature=0.8)
         model_completion = fschatbot.generate(input_text, generate_kwargs)
+        model_completion = normalize_model_completion(model_completion)
         model_answer = clean_answer(model_completion)
         is_cor = is_correct(model_answer, sample['output'])
         answers.append(is_cor)
