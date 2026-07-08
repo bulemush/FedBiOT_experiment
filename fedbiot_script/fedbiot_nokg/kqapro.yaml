@@ -14,6 +14,7 @@ federate:
 data:
   root: data/
   type: 'kqa_pro@llm'
+  args: [ { 'train_file': 'kqa_pro/train.json', 'val_file': 'kqa_pro/val.json', 'test_file': 'kqa_pro/test.json' } ]
   splits: [0.9,0.05,0.05]
   splitter: 'iid'
 llm:

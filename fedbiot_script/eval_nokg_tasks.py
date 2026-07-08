@@ -34,7 +34,7 @@ TASK_TO_DATASET = {
     'cwq': ('cwq', None),
     'graphquestions': ('graphquestions', None),
     'kqapro': ('kqa_pro', None),
-    'openbookqa': ('openbookqa_mcqa', 'openbookqa'),
+    'openbookqa': ('openbookqa_mcqa', None),
 }
 
 
@@ -65,7 +65,7 @@ def _question_from_item(item):
     return '' if question is None else str(question).strip()
 
 
-def _select_split(split_records, split):
+def _select_split(split_records, split, formatter=None):
     candidates = [split]
     if split == 'test':
         candidates.extend(['validation', 'train'])
@@ -75,7 +75,7 @@ def _select_split(split_records, split):
         candidates.extend(['validation', 'test'])
     for name in candidates:
         records = split_records.get(name) or []
-        if records:
+        if records and (formatter is None or formatter(records)):
             return name, records
     return split, []
 
@@ -83,7 +83,13 @@ def _select_split(split_records, split):
 def _load_eval_records(task, root, split):
     dataset_name, hf_name = TASK_TO_DATASET[task]
     split_records = _load_split_records(root, dataset_name, hf_name=hf_name)
-    used_split, records = _select_split(split_records, split)
+    formatter = None
+    if task in QA_DATASETS:
+        formatter = lambda records: _format_text_qa_records(
+            records, 'kqa_pro' if task == 'kqapro' else task)
+    elif task == 'openbookqa':
+        formatter = _format_openbookqa_records
+    used_split, records = _select_split(split_records, split, formatter)
     return used_split, records
 
 

@@ -14,6 +14,7 @@ federate:
 data:
   root: data/
   type: 'cwq@llm'
+  args: [ { 'train_file': 'CWQ/ComplexWebQuestions_train.json', 'val_file': 'CWQ/ComplexWebQuestions_dev.json', 'test_file': 'CWQ/ComplexWebQuestions_test.json' } ]
   splits: [0.9,0.05,0.05]
   splitter: 'iid'
 llm:

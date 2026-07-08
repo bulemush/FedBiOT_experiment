@@ -14,6 +14,7 @@ federate:
 data:
   root: data/
   type: 'openbookqa_mcqa@llm'
+  args: [ { 'train_file': 'openbookQA/main/train-00000-of-00001.parquet', 'val_file': 'openbookQA/main/validation-00000-of-00001.parquet', 'test_file': 'openbookQA/main/test-00000-of-00001.parquet' } ]
   splits: [0.9,0.05,0.05]
   splitter: 'iid'
 llm:

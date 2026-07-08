@@ -70,6 +70,88 @@ def _read_records_from_file(path):
     return []
 
 
+def _normalize_path_list(paths):
+    if paths is None:
+        return []
+    if isinstance(paths, (list, tuple)):
+        return list(paths)
+    return [paths]
+
+
+def _read_split_files(root, split_files):
+    split_records = {}
+    for split, paths in split_files.items():
+        records = []
+        for raw_path in _normalize_path_list(paths):
+            path = os.fspath(raw_path)
+            if not os.path.isabs(path):
+                path = os.path.join(root, path)
+            matched_paths = glob.glob(path)
+            if not matched_paths and os.path.exists(path):
+                matched_paths = [path]
+            if not matched_paths:
+                raise FileNotFoundError(f'Cannot find data file: {path}')
+            for matched_path in sorted(matched_paths):
+                records.extend(_read_records_from_file(matched_path))
+        split_records[split] = records
+    return split_records
+
+
+def _split_files_from_args(data_args):
+    if not data_args:
+        return {}
+    args = data_args[0] if isinstance(data_args, list) else data_args
+    if not hasattr(args, 'get'):
+        return {}
+    key_groups = {
+        'train': ['train_file', 'train_files'],
+        'validation': [
+            'validation_file', 'validation_files', 'val_file', 'val_files',
+            'valid_file', 'valid_files', 'dev_file', 'dev_files'
+        ],
+        'test': ['test_file', 'test_files'],
+    }
+    split_files = {}
+    for split, keys in key_groups.items():
+        files = []
+        for key in keys:
+            files.extend(_normalize_path_list(args.get(key)))
+        if files:
+            split_files[split] = files
+    return split_files
+
+
+def _default_split_patterns(dataset_name):
+    return {
+        'cwq': {
+            'train': ['ComplexWebQuestions_train.*'],
+            'validation': [
+                'ComplexWebQuestions_dev.*',
+                'ComplexWebQuestions_validation.*',
+            ],
+            'test': ['ComplexWebQuestions_test.*'],
+        },
+        'graphquestions': {
+            'train': ['graphquestions.training.*', 'graphquestions_train.*'],
+            'validation': [
+                'graphquestions.validation.*', 'graphquestions.dev.*',
+                'graphquestions_val.*'
+            ],
+            'test': ['graphquestions.testing.*', 'graphquestions_test.*'],
+        },
+        'kqa_pro': {
+            'train': ['train.*'],
+            'validation': ['val.*', 'valid.*', 'validation.*', 'dev.*'],
+            'test': ['test.*'],
+        },
+        'openbookqa_mcqa': {
+            'train': ['train-*.*', 'train.*'],
+            'validation': ['validation-*.*', 'validation.*', 'valid.*'],
+            'test': ['test-*.*', 'test.*'],
+        },
+    }.get(dataset_name, {})
+
+
 def _records_to_list(split):
     if split is None:
         return []
@@ -78,7 +160,11 @@ def _records_to_list(split):
     return [dict(item) for item in split]
 
 
-def _load_split_records(root, dataset_name, hf_name=None):
+def _load_split_records(root, dataset_name, hf_name=None, data_args=None):
+    split_files = _split_files_from_args(data_args)
+    if split_files:
+        return _read_split_files(root, split_files)
+
     split_aliases = {
         'train': ['train'],
         'validation': ['validation', 'valid', 'val', 'dev'],
@@ -105,7 +191,20 @@ def _load_split_records(root, dataset_name, hf_name=None):
             pass
 
         split_records = {}
+        dataset_patterns = _default_split_patterns(dataset_name)
+        for split, patterns in dataset_patterns.items():
+            files = []
+            for pattern in patterns:
+                files.extend(glob.glob(os.path.join(data_dir, pattern)))
+            if files:
+                records = []
+                for path in sorted(files):
+                    records.extend(_read_records_from_file(path))
+                split_records[split] = records
+
         for split, aliases in split_aliases.items():
+            if split in split_records:
+                continue
             files = []
             for alias in aliases:
                 for ext in extensions:
@@ -173,14 +272,16 @@ DATASET_LOADERS = {
      lambda records: _format_text_qa_records(records, 'graphquestions')),
     'kqapro': ('kqa_pro', None,
                lambda records: _format_text_qa_records(records, 'kqa_pro')),
-    'openbookqa': ('openbookqa_mcqa', 'openbookqa',
-                   _format_openbookqa_records),
+    'openbookqa': ('openbookqa_mcqa', None, _format_openbookqa_records),
 }
 
 
-def _check_data(dataset, root):
+def _check_data(dataset, root, data_args=None):
     dataset_name, hf_name, formatter = DATASET_LOADERS[dataset]
-    split_records = _load_split_records(root, dataset_name, hf_name=hf_name)
+    split_records = _load_split_records(root,
+                                        dataset_name,
+                                        hf_name=hf_name,
+                                        data_args=data_args)
     counts = {}
     ok = True
     for split in ['train', 'validation', 'test']:
@@ -211,7 +312,8 @@ def main():
                 cfg = yaml.safe_load(f)
             if dataset not in checked_data:
                 try:
-                    data_ok, counts = _check_data(dataset, cfg['data']['root'])
+                    data_ok, counts = _check_data(
+                        dataset, cfg['data']['root'], cfg['data'].get('args'))
                     checked_data[dataset] = (data_ok, counts)
                 except Exception as error:
                     data_ok, counts = False, {'error': str(error)}
