@@ -177,6 +177,16 @@ class LLMTrainer(GeneralTorchTrainer):
             and not self._model_has_device_map(ctx.model) \
             and not self._model_uses_multiple_devices(ctx.model)
 
+    @staticmethod
+    def _get_model_parallel_kwargs(cfg):
+        model_parallel = getattr(cfg.llm, 'model_parallel', None)
+        if model_parallel is None or not getattr(model_parallel, 'use', False):
+            return {}
+        return {
+            'device_map': getattr(model_parallel, 'device_map', 'auto'),
+            'max_memory': getattr(model_parallel, 'max_memory', None),
+        }
+
     @lifecycle(LIFECYCLE.BATCH)
     def _run_batch(self, hooks_set, run_step=-1):
         if self.ctx.cur_mode in [MODE.TRAIN, MODE.FINETUNE]:
@@ -241,7 +251,7 @@ class LLMTrainer(GeneralTorchTrainer):
     def _hook_on_fit_start_init(self, ctx):
         if ctx.cfg.llm.accelerator.use:
             # prepare model sharding
-            ctx.model.sharding()
+            ctx.model.sharding(**self._get_model_parallel_kwargs(ctx.cfg))
 
             if ctx.cur_mode in [MODE.TRAIN, MODE.FINETUNE]:
                 # Initialize optimizer here to avoid the reuse of optimizers
@@ -288,7 +298,10 @@ class LLMTrainer(GeneralTorchTrainer):
 
         else:
             # prepare model and optimizer
-            if not self._model_has_device_map(ctx.model):
+            if getattr(getattr(ctx.cfg.llm, 'model_parallel', None), 'use',
+                       False):
+                ctx.model.sharding(**self._get_model_parallel_kwargs(ctx.cfg))
+            elif not self._model_has_device_map(ctx.model):
                 ctx.model.to(ctx.device)
             if ctx.cur_mode in [MODE.TRAIN, MODE.FINETUNE]:
                 # Initialize optimizer here to avoid the reuse of optimizers

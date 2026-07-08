@@ -125,6 +125,8 @@ class KDTrainer(LLMTrainer):
                                         only_for_eval, monitor)
         self.ctx.raw_model = raw_model
         if not config.llm.accelerator.use and \
+                not getattr(getattr(config.llm, 'model_parallel', None),
+                            'use', False) and \
                 not self._model_has_device_map(self.ctx.raw_model):
             self.ctx.raw_model = self.ctx.raw_model.to(device)
         self.lm_loss_weight = \
@@ -141,7 +143,12 @@ class KDTrainer(LLMTrainer):
         super()._hook_on_fit_start_init(ctx)
 
         if ctx.cfg.llm.accelerator.use:
-            self.ctx.raw_model.sharding()
+            self.ctx.raw_model.sharding(
+                **self._get_model_parallel_kwargs(ctx.cfg))
+        elif getattr(getattr(ctx.cfg.llm, 'model_parallel', None), 'use',
+                     False):
+            self.ctx.raw_model.sharding(
+                **self._get_model_parallel_kwargs(ctx.cfg))
 
     def train(self, target_data_split_name="train", hooks_set=None):
         num_samples, model_para_all, eval_metrics = \

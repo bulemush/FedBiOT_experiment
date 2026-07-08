@@ -1,5 +1,6 @@
 import os
 import gzip
+import glob
 import json
 import pickle
 import random
@@ -257,6 +258,242 @@ def load_jsonls(file_paths,
     return list_data_dict
 
 
+def _first_present(item, keys, default=None):
+    for key in keys:
+        if key in item and item[key] not in [None, '']:
+            return item[key]
+    return default
+
+
+def _stringify_answer(answer):
+    if answer is None:
+        return ''
+    if isinstance(answer, list):
+        answers = [_stringify_answer(x) for x in answer]
+        answers = [x for x in answers if x]
+        return answers[0] if answers else ''
+    if isinstance(answer, dict):
+        value = _first_present(answer, [
+            'answer', 'text', 'name', 'label', 'answer_text',
+            'answerArgument', 'argument'
+        ])
+        return _stringify_answer(value)
+    return str(answer).strip()
+
+
+def _candidate_dataset_dirs(root, dataset_name):
+    aliases = {
+        'cwq': ['cwq', 'CWQ', 'complexwebquestions',
+                'ComplexWebQuestions'],
+        'graphquestions': ['graphquestions', 'GraphQuestions',
+                           'graph_questions', 'Graph_Questions'],
+        'kqa_pro': ['kqa_pro', 'kqapro', 'KQAPro', 'KQA_PRO', 'kqa-pro'],
+        'openbookqa_mcqa': ['openbookQA/main', 'openbookqa/main',
+                            'OpenBookQA/main', 'openbookqa',
+                            'OpenBookQA', 'openbookQA']
+    }
+    names = aliases.get(dataset_name, [dataset_name])
+    return [os.path.join(root, name) for name in names]
+
+
+def _read_records_from_file(path):
+    lower_path = path.lower()
+    if lower_path.endswith('.jsonl'):
+        records = []
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    records.append(json.loads(line))
+        return records
+    if lower_path.endswith('.json'):
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            for key in ['data', 'examples', 'questions', 'records']:
+                if isinstance(data.get(key), list):
+                    return data[key]
+            return [data]
+        return data
+    if lower_path.endswith('.parquet'):
+        try:
+            import pandas as pd
+        except ImportError as error:
+            raise ImportError('Reading parquet data requires pandas.') \
+                from error
+        return pd.read_parquet(path).to_dict('records')
+    raise ValueError(f'Unsupported data file type: {path}')
+
+
+def _records_to_list(split):
+    if split is None:
+        return []
+    if hasattr(split, 'to_list'):
+        return split.to_list()
+    return [dict(item) for item in split]
+
+
+def _load_split_records(root, dataset_name, hf_name=None, hf_config=None):
+    split_aliases = {
+        'train': ['train'],
+        'validation': ['validation', 'valid', 'val', 'dev'],
+        'test': ['test']
+    }
+    extensions = ['jsonl', 'json', 'parquet']
+
+    for data_dir in _candidate_dataset_dirs(root, dataset_name):
+        if not os.path.exists(data_dir):
+            continue
+
+        try:
+            disk_dataset = datasets.load_from_disk(data_dir)
+            if hasattr(disk_dataset, 'keys'):
+                return {
+                    'train': _records_to_list(disk_dataset.get('train')),
+                    'validation': _records_to_list(
+                        disk_dataset.get('validation')
+                        or disk_dataset.get('valid')
+                        or disk_dataset.get('val')
+                        or disk_dataset.get('dev')),
+                    'test': _records_to_list(disk_dataset.get('test')),
+                }
+        except Exception:
+            pass
+
+        split_records = {}
+        for split, aliases in split_aliases.items():
+            files = []
+            for alias in aliases:
+                for ext in extensions:
+                    files.extend(
+                        glob.glob(os.path.join(data_dir, f'{alias}.{ext}')))
+                    files.extend(
+                        glob.glob(os.path.join(data_dir, alias,
+                                               f'*.{ext}')))
+            if files:
+                records = []
+                for path in sorted(files):
+                    records.extend(_read_records_from_file(path))
+                split_records[split] = records
+        if split_records:
+            return split_records
+
+        single_files = []
+        for ext in extensions:
+            single_files.extend(glob.glob(os.path.join(data_dir, f'*.{ext}')))
+        if single_files:
+            records = []
+            for path in sorted(single_files):
+                records.extend(_read_records_from_file(path))
+            grouped = {'train': [], 'validation': [], 'test': []}
+            for item in records:
+                split = str(_first_present(item, ['split', 'set'], 'train'))
+                split = {'valid': 'validation',
+                         'val': 'validation',
+                         'dev': 'validation'}.get(split.lower(),
+                                                  split.lower())
+                grouped.setdefault(split, []).append(item)
+            if any(grouped.values()):
+                return grouped
+
+    if hf_name is None:
+        raise FileNotFoundError(
+            f'Cannot find local data for {dataset_name} under {root}.')
+
+    if hf_config is None:
+        hf_dataset = datasets.load_dataset(hf_name)
+    else:
+        hf_dataset = datasets.load_dataset(hf_name, hf_config)
+    return {
+        'train': _records_to_list(hf_dataset.get('train')),
+        'validation': _records_to_list(
+            hf_dataset.get('validation') or hf_dataset.get('valid')
+            or hf_dataset.get('val') or hf_dataset.get('dev')),
+        'test': _records_to_list(hf_dataset.get('test')),
+    }
+
+
+def _format_text_qa_records(records, category):
+    formatted = []
+    for item in records:
+        question = _first_present(item, [
+            'question', 'Question', 'question_text', 'questionText',
+            'utterance', 'machine_question', 'paraphrased_question'
+        ])
+        answer = _first_present(item, [
+            'answer', 'answers', 'Answer', 'answer_text', 'answerText',
+            'target', 'output', 'gold', 'gold_answer'
+        ])
+        question = '' if question is None else str(question).strip()
+        answer = _stringify_answer(answer)
+        if question and answer:
+            formatted.append(
+                dict(instruction=question,
+                     input=None,
+                     output=answer,
+                     category=category))
+    return formatted
+
+
+def _format_openbookqa_records(records):
+    formatted = []
+    for item in records:
+        question = _first_present(item,
+                                  ['question_stem', 'question', 'Question'])
+        choices = item.get('choices', {})
+        answer = _first_present(item, ['answerKey', 'answer', 'label'])
+        if not question or not choices or answer in [None, '']:
+            continue
+
+        labels = choices.get('label') if isinstance(choices, dict) else None
+        texts = choices.get('text') if isinstance(choices, dict) else None
+        if labels is None or texts is None:
+            if isinstance(choices, list):
+                labels = [chr(ord('A') + idx) for idx in range(len(choices))]
+                texts = [
+                    _stringify_answer(choice.get('text', choice))
+                    if isinstance(choice, dict) else _stringify_answer(choice)
+                    for choice in choices
+                ]
+            else:
+                continue
+
+        options = []
+        for label, text in zip(labels, texts):
+            options.append(f'{str(label).strip()}. {str(text).strip()}')
+        instruction = (
+            f'Question: {str(question).strip()}\n'
+            f'Choices:\n' + '\n'.join(options) +
+            '\nAnswer with the option letter.')
+        formatted.append(
+            dict(instruction=instruction,
+                 input=None,
+                 output=str(answer).strip(),
+                 category='openbookqa'))
+    return formatted
+
+
+def _build_llm_split_dataset(split_records, tokenizer, formatter):
+    train_records = split_records.get('train') or []
+    val_records = split_records.get('validation') or []
+    test_records = split_records.get('test') or []
+
+    if val_records or test_records:
+        if not val_records:
+            val_size = max(1, int(0.01 * len(train_records)))
+            val_records, train_records = train_records[:val_size], \
+                train_records[val_size:]
+        if not test_records:
+            test_size = max(1, int(0.01 * len(train_records)))
+            test_records, train_records = train_records[:test_size], \
+                train_records[test_size:]
+        return (LLMDataset(formatter(train_records), tokenizer),
+                LLMDataset(formatter(val_records), tokenizer),
+                LLMDataset(formatter(test_records), tokenizer))
+
+    return LLMDataset(formatter(train_records), tokenizer)
+
+
 def load_llm_dataset(config=None, **kwargs):
     model_name, _ = _parse_model_type(config.model.type)
     tokenizer, num_new_tokens = \
@@ -392,6 +629,41 @@ def load_llm_dataset(config=None, **kwargs):
             list_data_dict[i]['instruction'] = \
                 list_data_dict[i]['instruction'].replace('\u00a0', '')
         dataset = LLMDataset(list_data_dict, tokenizer)
+
+    elif dataset_name.lower() == 'cwq':
+        split_records = _load_split_records(config.data.root,
+                                            'cwq',
+                                            hf_name=None)
+        dataset = _build_llm_split_dataset(
+            split_records,
+            tokenizer,
+            lambda records: _format_text_qa_records(records, 'cwq'))
+
+    elif dataset_name.lower() == 'graphquestions':
+        split_records = _load_split_records(config.data.root,
+                                            'graphquestions',
+                                            hf_name=None)
+        dataset = _build_llm_split_dataset(
+            split_records,
+            tokenizer,
+            lambda records: _format_text_qa_records(records,
+                                                    'graphquestions'))
+
+    elif dataset_name.lower() in ['kqa_pro', 'kqapro']:
+        split_records = _load_split_records(config.data.root,
+                                            'kqa_pro',
+                                            hf_name=None)
+        dataset = _build_llm_split_dataset(
+            split_records,
+            tokenizer,
+            lambda records: _format_text_qa_records(records, 'kqa_pro'))
+
+    elif dataset_name.lower() == 'openbookqa_mcqa':
+        split_records = _load_split_records(config.data.root,
+                                            'openbookqa_mcqa',
+                                            hf_name='openbookqa')
+        dataset = _build_llm_split_dataset(split_records, tokenizer,
+                                           _format_openbookqa_records)
 
     elif dataset_name.lower() == 'offsite_tuning':
         from federatedscope.llm.dataloader.offsite_tuning_dataset import \

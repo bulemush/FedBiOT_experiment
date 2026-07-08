@@ -1,3 +1,6 @@
+import os
+import re
+
 import torch
 import torch.nn as nn
 from collections import OrderedDict
@@ -41,6 +44,134 @@ import sys
 sys.setrecursionlimit(100000)
 
 logger = logging.getLogger(__name__)
+
+
+def _visible_cuda_device_ids():
+    if not torch.cuda.is_available():
+        return set()
+    return set(range(torch.cuda.device_count()))
+
+
+def _normalize_max_memory(max_memory):
+    if max_memory in [None, '', {}]:
+        return None
+    if hasattr(max_memory, 'items') and not isinstance(max_memory, dict):
+        max_memory = {
+            key: value for key, value in max_memory.items()
+            if not str(key).startswith('__')
+        }
+    if isinstance(max_memory, dict):
+        normalized = {}
+        visible_device_ids = _visible_cuda_device_ids()
+        for key, value in max_memory.items():
+            key_str = str(key)
+            if key_str.startswith('__'):
+                continue
+            if isinstance(key, str) and key.isdigit():
+                key = int(key)
+            if isinstance(key, int):
+                if visible_device_ids and key not in visible_device_ids:
+                    logger.warning(
+                        'Ignore max_memory for cuda:%s because it is not '
+                        'visible. CUDA_VISIBLE_DEVICES exposes logical GPUs '
+                        '%s.', key, sorted(visible_device_ids))
+                    continue
+                normalized[key] = value
+            elif key_str in ['cpu', 'disk', 'mps']:
+                normalized[key_str] = value
+        return normalized if len(normalized) > 0 else None
+    return max_memory
+
+
+def _memory_to_gib(value):
+    if value in [None, '']:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) / (1024**3)
+    if isinstance(value, str):
+        matched = re.match(r'^\s*([0-9]*\.?[0-9]+)\s*([A-Za-z]+)\s*$',
+                           value)
+        if matched is None:
+            return None
+        amount = float(matched.group(1))
+        unit = matched.group(2).lower()
+        if unit in ['gib', 'gi']:
+            return amount
+        if unit in ['gb', 'g']:
+            return amount * (1000**3) / (1024**3)
+        if unit in ['mib', 'mi']:
+            return amount / 1024
+        if unit in ['mb', 'm']:
+            return amount * (1000**2) / (1024**3)
+    return None
+
+
+def _balanced_layer_counts(total_layers, device_ids, max_memory=None):
+    if total_layers <= 0 or len(device_ids) == 0:
+        return []
+    weights = []
+    for device_id in device_ids:
+        memory = None
+        if max_memory is not None:
+            memory = _memory_to_gib(max_memory.get(device_id))
+        weights.append(memory if memory is not None and memory > 0 else 1.0)
+
+    weight_sum = sum(weights)
+    raw_counts = [total_layers * weight / weight_sum for weight in weights]
+    counts = [int(count) for count in raw_counts]
+    remaining = total_layers - sum(counts)
+    order = sorted(range(len(device_ids)),
+                   key=lambda idx: raw_counts[idx] - counts[idx],
+                   reverse=True)
+    for idx in order[:remaining]:
+        counts[idx] += 1
+    return counts
+
+
+def _get_module_device(module):
+    for param in module.parameters(recurse=False):
+        return param.device
+    for buffer in module.buffers(recurse=False):
+        return buffer.device
+    for param in module.parameters(recurse=True):
+        return param.device
+    for buffer in module.buffers(recurse=True):
+        return buffer.device
+    return None
+
+
+def _move_tensors_to_device(value, device):
+    if device is None:
+        return value
+    if torch.is_tensor(value):
+        return value.to(device)
+    if isinstance(value, tuple):
+        return tuple(_move_tensors_to_device(item, device) for item in value)
+    if isinstance(value, list):
+        return [_move_tensors_to_device(item, device) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _move_tensors_to_device(item, device)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _wrap_forward_to_own_device(module):
+    if getattr(module, '_fs_forward_inputs_device_aligned', False):
+        return
+    forward_attr = '_old_forward' if callable(
+        getattr(module, '_old_forward', None)) else 'forward'
+    old_forward = getattr(module, forward_attr)
+
+    def device_aligned_forward(*args, **kwargs):
+        module_device = _get_module_device(module)
+        args = _move_tensors_to_device(args, module_device)
+        kwargs = _move_tensors_to_device(kwargs, module_device)
+        return old_forward(*args, **kwargs)
+
+    setattr(module, forward_attr, device_aligned_forward)
+    module._fs_forward_inputs_device_aligned = True
 
 
 def enable_adapter(model, package, adapter, **kwargs):
@@ -278,21 +409,130 @@ class AdapterModel(nn.Module):
 
         return None
 
-    def sharding(self, device_map=None):
-        if device_map is not None:
+    def _find_module_name(self, target_module):
+        if target_module is None:
+            return None
+        for name, module in self.model.named_modules():
+            if module is target_module:
+                return name
+        return None
+
+    def _infer_balanced_layer_device_map(self, max_memory=None):
+        layers = self.layers
+        if not isinstance(layers, nn.ModuleList):
+            return None
+
+        layer_prefix = self._find_module_name(layers)
+        if layer_prefix in [None, '']:
+            return None
+
+        if max_memory is not None:
+            device_ids = sorted(
+                [key for key in max_memory.keys() if isinstance(key, int)])
+        else:
+            device_ids = list(range(torch.cuda.device_count()))
+        if len(device_ids) == 0:
+            return None
+
+        transformer_prefix = layer_prefix.rsplit('.', 1)[0]
+        root_prefix = transformer_prefix.rsplit('.', 1)[0] \
+            if '.' in transformer_prefix else ''
+        module_names = {name for name, _ in self.model.named_modules()}
+
+        input_embedding_name = self._find_module_name(
+            self.get_input_embeddings())
+        if input_embedding_name is None:
+            candidate = f'{transformer_prefix}.embed_tokens'
+            if candidate in module_names:
+                input_embedding_name = candidate
+
+        output_embedding_name = None
+        if hasattr(self.model, 'get_output_embeddings'):
+            try:
+                output_embedding_name = self._find_module_name(
+                    self.model.get_output_embeddings())
+            except Exception:
+                output_embedding_name = None
+        if output_embedding_name is None:
+            candidate = f'{root_prefix}.lm_head' if root_prefix else 'lm_head'
+            if candidate in module_names:
+                output_embedding_name = candidate
+
+        final_norm_name = None
+        candidate = f'{transformer_prefix}.norm'
+        if candidate in module_names:
+            final_norm_name = candidate
+
+        first_device = device_ids[0]
+        last_device = device_ids[-1]
+        device_map = {}
+        if input_embedding_name is not None:
+            device_map[input_embedding_name] = first_device
+
+        total_layers = len(layers)
+        layer_counts = _balanced_layer_counts(total_layers, device_ids,
+                                              max_memory)
+        boundaries = []
+        next_boundary = 0
+        for count in layer_counts:
+            next_boundary += count
+            boundaries.append(next_boundary)
+
+        for idx in range(total_layers):
+            device_idx = next(
+                (pos for pos, boundary in enumerate(boundaries)
+                 if idx < boundary),
+                len(device_ids) - 1)
+            device_map[f'{layer_prefix}.{idx}'] = device_ids[device_idx]
+        logger.info('balanced_layers layer counts by device: %s',
+                    {
+                        device_ids[idx]: layer_counts[idx]
+                        for idx in range(len(device_ids))
+                    })
+
+        if final_norm_name is not None:
+            device_map[final_norm_name] = last_device
+        if output_embedding_name is not None:
+            device_map[output_embedding_name] = last_device
+        return device_map
+
+    def sharding(self, device_map=None, max_memory=None):
+        max_memory = _normalize_max_memory(max_memory)
+        if isinstance(device_map, str) and device_map == 'balanced_layers':
+            device_map = self._infer_balanced_layer_device_map(max_memory)
+            if device_map is None:
+                device_map = 'auto'
+
+        if isinstance(device_map, dict):
             self.device_map = dict(device_map)
+        elif isinstance(device_map, str) and device_map not in ['auto']:
+            raise ValueError(f'Unsupported device_map strategy: {device_map}')
         elif hasattr(self, 'device_map') is False:
             current_map = getattr(self.model, 'hf_device_map', None)
             if isinstance(current_map, dict):
                 self.device_map = dict(current_map)
                 return
 
-            max_memory = get_balanced_memory(
+            if max_memory is None:
+                max_memory = get_balanced_memory(
+                    self.model,
+                    max_memory=None,
+                    no_split_module_classes=self.model_unit,
+                    low_zero=False,
+                )
+            self.device_map = infer_auto_device_map(
                 self.model,
-                max_memory=None,
+                max_memory=max_memory,
                 no_split_module_classes=self.model_unit,
-                low_zero=False,
             )
+        elif isinstance(device_map, str) and device_map == 'auto':
+            if max_memory is None:
+                max_memory = get_balanced_memory(
+                    self.model,
+                    max_memory=None,
+                    no_split_module_classes=self.model_unit,
+                    low_zero=False,
+                )
             self.device_map = infer_auto_device_map(
                 self.model,
                 max_memory=max_memory,
@@ -303,7 +543,27 @@ class AdapterModel(nn.Module):
         if isinstance(current_map, dict) and current_map == self.device_map:
             return
 
-        self.model = dispatch_model(self.model, device_map=self.device_map)
+        logger.info('Dispatch model with CUDA_VISIBLE_DEVICES=%r, logical '
+                    'visible GPUs=%s, device_map devices=%s',
+                    os.environ.get('CUDA_VISIBLE_DEVICES', ''),
+                    sorted(_visible_cuda_device_ids()),
+                    sorted({
+                        str(device)
+                        for device in self.device_map.values()
+                    }) if isinstance(self.device_map, dict) else
+                    self.device_map)
+        try:
+            self.model = dispatch_model(self.model,
+                                        device_map=self.device_map,
+                                        force_hooks=True)
+        except TypeError:
+            self.model = dispatch_model(self.model, device_map=self.device_map)
+        self._align_forward_inputs_to_module_devices()
+
+    def _align_forward_inputs_to_module_devices(self):
+        for module in self.model.modules():
+            if callable(getattr(module, '_old_forward', None)):
+                _wrap_forward_to_own_device(module)
 
     def get_input_device(self):
         input_embeddings = self.get_input_embeddings()

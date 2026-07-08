@@ -49,6 +49,15 @@ def extend_llm_cfg(cfg):
     cfg.llm.accelerator.config = ''
 
     # ---------------------------------------------------------------------- #
+    # Model parallel related options
+    # ---------------------------------------------------------------------- #
+    cfg.llm.model_parallel = CN(new_allowed=True)
+    cfg.llm.model_parallel.use = False
+    cfg.llm.model_parallel.device_map = 'balanced_layers'
+    cfg.llm.model_parallel.same_device_map = False
+    cfg.llm.model_parallel.coexisting_model_ratio = 0.45
+
+    # ---------------------------------------------------------------------- #
     # Adapters for LLM
     # ---------------------------------------------------------------------- #
     cfg.llm.adapter = CN()

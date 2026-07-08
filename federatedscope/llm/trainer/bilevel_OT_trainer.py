@@ -242,6 +242,8 @@ class OTTrainer_server(LLMTrainer):
             raw_model.adapter.state_dict())
         self.ctx.raw_model = raw_model
         if not config.llm.accelerator.use and \
+                not getattr(getattr(config.llm, 'model_parallel', None),
+                            'use', False) and \
                 not self._model_has_device_map(self.ctx.raw_model):
             self.ctx.raw_model = self.ctx.raw_model.to(device)
         self.kd_loss_weight = \
@@ -267,7 +269,12 @@ class OTTrainer_server(LLMTrainer):
         super()._hook_on_fit_start_init(ctx)
 
         if ctx.cfg.llm.accelerator.use:
-            self.ctx.raw_model.sharding()
+            self.ctx.raw_model.sharding(
+                **self._get_model_parallel_kwargs(ctx.cfg))
+        elif getattr(getattr(ctx.cfg.llm, 'model_parallel', None), 'use',
+                     False):
+            self.ctx.raw_model.sharding(
+                **self._get_model_parallel_kwargs(ctx.cfg))
 
     # def _hook_on_fit_start_numerical_precision(self, ctx):
     #     super(OTTrainer_server,
@@ -277,6 +284,8 @@ class OTTrainer_server(LLMTrainer):
 
     def train(self, target_data_split_name="train", hooks_set=None):
         if not self.cfg.llm.accelerator.use and \
+                not getattr(getattr(self.cfg.llm, 'model_parallel', None),
+                            'use', False) and \
                 not self._model_has_device_map(self.ctx.raw_model):
             self.ctx.raw_model.to(self.ctx.device)
         num_samples, model_para_all, eval_metrics = \

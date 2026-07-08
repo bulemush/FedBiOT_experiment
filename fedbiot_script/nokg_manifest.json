@@ -1,0 +1,196 @@
+{
+  "runs": [
+    {
+      "method": "fedbiot",
+      "dataset": "cwq",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedbiot_nokg/cwq.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/cwq_seed1.ckpt",
+      "result": "results/nokg_eval/fedbiot/cwq/seed1/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "cwq",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedbiot_nokg/cwq.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/cwq_seed2.ckpt",
+      "result": "results/nokg_eval/fedbiot/cwq/seed2/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "cwq",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedbiot_nokg/cwq.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/cwq_seed3.ckpt",
+      "result": "results/nokg_eval/fedbiot/cwq/seed3/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "graphquestions",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedbiot_nokg/graphquestions.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/graphquestions_seed1.ckpt",
+      "result": "results/nokg_eval/fedbiot/graphquestions/seed1/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "graphquestions",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedbiot_nokg/graphquestions.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/graphquestions_seed2.ckpt",
+      "result": "results/nokg_eval/fedbiot/graphquestions/seed2/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "graphquestions",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedbiot_nokg/graphquestions.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/graphquestions_seed3.ckpt",
+      "result": "results/nokg_eval/fedbiot/graphquestions/seed3/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "kqapro",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedbiot_nokg/kqapro.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/kqapro_seed1.ckpt",
+      "result": "results/nokg_eval/fedbiot/kqapro/seed1/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "kqapro",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedbiot_nokg/kqapro.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/kqapro_seed2.ckpt",
+      "result": "results/nokg_eval/fedbiot/kqapro/seed2/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "kqapro",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedbiot_nokg/kqapro.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/kqapro_seed3.ckpt",
+      "result": "results/nokg_eval/fedbiot/kqapro/seed3/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "openbookqa",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedbiot_nokg/openbookqa.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/openbookqa_seed1.ckpt",
+      "result": "results/nokg_eval/fedbiot/openbookqa/seed1/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "openbookqa",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedbiot_nokg/openbookqa.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/openbookqa_seed2.ckpt",
+      "result": "results/nokg_eval/fedbiot/openbookqa/seed2/result.json"
+    },
+    {
+      "method": "fedbiot",
+      "dataset": "openbookqa",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedbiot_nokg/openbookqa.yaml",
+      "checkpoint": "checkpoints/nokg/fedbiot/openbookqa_seed3.ckpt",
+      "result": "results/nokg_eval/fedbiot/openbookqa/seed3/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "cwq",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedot_nokg/cwq.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/cwq_seed1.ckpt",
+      "result": "results/nokg_eval/fedot/cwq/seed1/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "cwq",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedot_nokg/cwq.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/cwq_seed2.ckpt",
+      "result": "results/nokg_eval/fedot/cwq/seed2/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "cwq",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedot_nokg/cwq.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/cwq_seed3.ckpt",
+      "result": "results/nokg_eval/fedot/cwq/seed3/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "graphquestions",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedot_nokg/graphquestions.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/graphquestions_seed1.ckpt",
+      "result": "results/nokg_eval/fedot/graphquestions/seed1/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "graphquestions",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedot_nokg/graphquestions.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/graphquestions_seed2.ckpt",
+      "result": "results/nokg_eval/fedot/graphquestions/seed2/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "graphquestions",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedot_nokg/graphquestions.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/graphquestions_seed3.ckpt",
+      "result": "results/nokg_eval/fedot/graphquestions/seed3/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "kqapro",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedot_nokg/kqapro.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/kqapro_seed1.ckpt",
+      "result": "results/nokg_eval/fedot/kqapro/seed1/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "kqapro",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedot_nokg/kqapro.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/kqapro_seed2.ckpt",
+      "result": "results/nokg_eval/fedot/kqapro/seed2/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "kqapro",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedot_nokg/kqapro.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/kqapro_seed3.ckpt",
+      "result": "results/nokg_eval/fedot/kqapro/seed3/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "openbookqa",
+      "seed": 1,
+      "cfg": "fedbiot_script/fedot_nokg/openbookqa.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/openbookqa_seed1.ckpt",
+      "result": "results/nokg_eval/fedot/openbookqa/seed1/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "openbookqa",
+      "seed": 2,
+      "cfg": "fedbiot_script/fedot_nokg/openbookqa.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/openbookqa_seed2.ckpt",
+      "result": "results/nokg_eval/fedot/openbookqa/seed2/result.json"
+    },
+    {
+      "method": "fedot",
+      "dataset": "openbookqa",
+      "seed": 3,
+      "cfg": "fedbiot_script/fedot_nokg/openbookqa.yaml",
+      "checkpoint": "checkpoints/nokg/fedot/openbookqa_seed3.ckpt",
+      "result": "results/nokg_eval/fedot/openbookqa/seed3/result.json"
+    }
+  ]
+}
