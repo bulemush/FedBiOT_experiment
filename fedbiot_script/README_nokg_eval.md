@@ -27,7 +27,11 @@ llm:
     use: false
 dataloader:
   batch_size: 2
+model:
+  type: /home/async/data-disk/wgh/FedKG/federatedscope/llm/data/models/Llama-2-7b-hf@huggingface_llm
 ```
+
+服务器不能访问 HuggingFace 时，必须确保上述本地模型目录已经存在，并且目录中包含 `tokenizer_config.json`、tokenizer 文件和模型权重文件。否则训练会继续尝试访问 `huggingface.co`。
 
 FedBiOT 与 FedOT 的唯一区别是：
 
@@ -75,7 +79,7 @@ python fedbiot_script/preflight_nokg_eval.py --skip-checkpoints
 
 ## 训练
 
-建议按“一个方法 + 一个数据集”分别启动训练。这样每个 nohup 任务只负责一个数据集的 3 个 seed；如果某个数据集 OOM、断开或报错，不会影响其他数据集。
+建议按“一个方法 + 一个数据集 + 一个 seed”分别启动训练。这样每个 nohup 任务只负责一个实验点；如果某个数据集 OOM、断开或报错，不会影响其他数据集。
 
 两组实验仍然保持相同的 backbone、LoRA 参数、客户端数量、数据划分、batch size、local update steps、optimizer/lr、rounds 和 seeds。当前 YAML 已加入模型并行显存约束：
 
@@ -90,45 +94,46 @@ llm:
     same_device_map: false
 ```
 
-这会让模型层按可用显存比例分配到双卡上，减少单卡显存峰值。
+这会让模型层按可用显存比例分配到双卡上，减少单卡显存峰值。下面命令默认使用服务器 GPU `2,3`；如果要换卡，只需要修改 `CUDA_VISIBLE_DEVICES=2,3`。因为可见 GPU 会在进程内重新编号，所以配置中的 `device 0` 指的是可见卡中的第一张卡。
 
-### 单数据集训练脚本
-
-训练统一使用 `fedbiot_script/train_nokg_one.sh`。常用变量如下：
-
-```bash
-METHOD=fedbiot        # fedbiot 或 fedot
-DATASET=cwq          # cwq / graphquestions / kqapro / openbookqa
-SEEDS="1 2 3"
-GPU=0,1              # 双卡训练
-BATCH_SIZE=2
-```
-
-每个 seed 的详细日志会写入 `logs/nokg/train_${METHOD}_${DATASET}_seed${seed}.log`，driver 日志只记录当前数据集整体进度。
+下面所有命令以 `seed 1` 为例。正式实验还需要把每条命令中的 `seed 1`、`seed1` 改成 `seed 2`、`seed2` 和 `seed 3`、`seed3` 后各运行一次。
 
 ### FedBiOT-NoKG 逐数据集训练
 
 ```bash
 mkdir -p logs/nokg checkpoints/nokg/fedbiot
 
-METHOD=fedbiot DATASET=cwq SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedbiot_cwq_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedbiot_nokg/cwq.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedbiot/cwq_seed1.ckpt \
+  expname fedbiot_nokg/cwq_seed1 \
+  > logs/nokg/train_fedbiot_cwq_seed1.log 2>&1 &
 
-METHOD=fedbiot DATASET=graphquestions SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedbiot_graphquestions_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedbiot_nokg/graphquestions.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedbiot/graphquestions_seed1.ckpt \
+  expname fedbiot_nokg/graphquestions_seed1 \
+  > logs/nokg/train_fedbiot_graphquestions_seed1.log 2>&1 &
 
-METHOD=fedbiot DATASET=kqapro SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedbiot_kqapro_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedbiot_nokg/kqapro.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedbiot/kqapro_seed1.ckpt \
+  expname fedbiot_nokg/kqapro_seed1 \
+  > logs/nokg/train_fedbiot_kqapro_seed1.log 2>&1 &
 
-METHOD=fedbiot DATASET=openbookqa SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedbiot_openbookqa_driver.log 2>&1 &
-```
-
-建议一次只启动其中一条。确认完成后再启动下一个数据集：
-
-```bash
-tail -f logs/nokg/train_fedbiot_cwq_driver.log
-tail -f logs/nokg/train_fedbiot_cwq_seed1.log
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedbiot_nokg/openbookqa.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedbiot/openbookqa_seed1.ckpt \
+  expname fedbiot_nokg/openbookqa_seed1 \
+  > logs/nokg/train_fedbiot_openbookqa_seed1.log 2>&1 &
 ```
 
 ### FedOT-NoKG 逐数据集训练
@@ -136,17 +141,43 @@ tail -f logs/nokg/train_fedbiot_cwq_seed1.log
 ```bash
 mkdir -p logs/nokg checkpoints/nokg/fedot
 
-METHOD=fedot DATASET=cwq SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedot_cwq_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedot_nokg/cwq.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedot/cwq_seed1.ckpt \
+  expname fedot_nokg/cwq_seed1 \
+  > logs/nokg/train_fedot_cwq_seed1.log 2>&1 &
 
-METHOD=fedot DATASET=graphquestions SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedot_graphquestions_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedot_nokg/graphquestions.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedot/graphquestions_seed1.ckpt \
+  expname fedot_nokg/graphquestions_seed1 \
+  > logs/nokg/train_fedot_graphquestions_seed1.log 2>&1 &
 
-METHOD=fedot DATASET=kqapro SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedot_kqapro_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedot_nokg/kqapro.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedot/kqapro_seed1.ckpt \
+  expname fedot_nokg/kqapro_seed1 \
+  > logs/nokg/train_fedot_kqapro_seed1.log 2>&1 &
 
-METHOD=fedot DATASET=openbookqa SEEDS="1 2 3" GPU=0,1 \
-nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedot_openbookqa_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+nohup python -m federatedscope.main \
+  --cfg fedbiot_script/fedot_nokg/openbookqa.yaml \
+  seed 1 device 0 \
+  federate.save_to checkpoints/nokg/fedot/openbookqa_seed1.ckpt \
+  expname fedot_nokg/openbookqa_seed1 \
+  > logs/nokg/train_fedot_openbookqa_seed1.log 2>&1 &
+```
+
+查看训练日志：
+
+```bash
+tail -f logs/nokg/train_fedbiot_cwq_seed1.log
 ```
 
 ### Smoke Training
@@ -154,11 +185,21 @@ nohup bash fedbiot_script/train_nokg_one.sh > logs/nokg/train_fedot_openbookqa_d
 只做快速连通性测试时，对单个方法和单个数据集覆盖 rounds、local steps：
 
 ```bash
-METHOD=fedbiot DATASET=cwq SEEDS=1 GPU=0,1 TOTAL_ROUNDS=1 LOCAL_STEPS=1 ALIGN_STEPS=1 \
-bash fedbiot_script/train_nokg_one.sh
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+python -m federatedscope.main \
+  --cfg fedbiot_script/fedbiot_nokg/cwq.yaml \
+  seed 1 device 0 \
+  federate.total_round_num 1 \
+  train.local_update_steps 1 \
+  llm.offsite_tuning.emu_align.train.local_update_steps 1
 
-METHOD=fedot DATASET=cwq SEEDS=1 GPU=0,1 TOTAL_ROUNDS=1 LOCAL_STEPS=1 ALIGN_STEPS=1 \
-bash fedbiot_script/train_nokg_one.sh
+CUDA_VISIBLE_DEVICES=2,3 PYTHONPATH=$PWD PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+python -m federatedscope.main \
+  --cfg fedbiot_script/fedot_nokg/cwq.yaml \
+  seed 1 device 0 \
+  federate.total_round_num 1 \
+  train.local_update_steps 1 \
+  llm.offsite_tuning.emu_align.train.local_update_steps 1
 ```
 
 ## OOM 处理建议
