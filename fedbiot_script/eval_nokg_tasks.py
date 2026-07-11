@@ -93,7 +93,7 @@ def _load_eval_records(task, root, split):
     return used_split, records
 
 
-def _build_cfg(cfg_path, seed, checkpoint):
+def _build_cfg(cfg_path, seed, checkpoint, eval_type):
     init_cfg = global_cfg.clone()
     init_cfg.merge_from_file(cfg_path)
     opts = []
@@ -101,6 +101,8 @@ def _build_cfg(cfg_path, seed, checkpoint):
         opts.extend(['seed', str(seed)])
     if checkpoint:
         opts.extend(['federate.save_to', checkpoint])
+    if eval_type:
+        opts.extend(['llm.offsite_tuning.eval_type', eval_type])
     cfg_opt, _ = parse_client_cfg(opts)
     init_cfg.merge_from_list(cfg_opt)
     update_logger(init_cfg, clear_before_add=True)
@@ -254,11 +256,14 @@ def main():
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--split', default='test')
     parser.add_argument('--limit', type=int, default=None)
+    parser.add_argument('--eval-type', choices=['emu', 'full'], default=None,
+                        help='Offsite-tuning model for evaluation: emulator '
+                        'plus adapter (emu) or full model plus adapter (full).')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
-    cfg = _build_cfg(args.cfg, args.seed, args.checkpoint)
+    cfg = _build_cfg(args.cfg, args.seed, args.checkpoint, args.eval_type)
     used_split, records = _load_eval_records(args.dataset, cfg.data.root,
                                              args.split)
     if not records:
@@ -280,6 +285,7 @@ def main():
         'cfg': args.cfg,
         'checkpoint': cfg.federate.save_to,
         'seed': cfg.seed,
+        'eval_type': cfg.llm.offsite_tuning.eval_type,
         'metric': metrics['metric'],
         'value': value,
         'correct': metrics['correct'],

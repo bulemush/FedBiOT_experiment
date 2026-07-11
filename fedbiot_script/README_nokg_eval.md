@@ -235,42 +235,119 @@ python federatedscope/main.py --cfg "$cfg" \
 python fedbiot_script/preflight_nokg_eval.py
 ```
 
-评估只使用单卡。每次只评估一个方法的一个数据集，结果写入 `results/nokg_eval/${method}/${dataset}/seed${seed}/`。
+评估只使用单卡。下面命令直接调用 Python 评估入口，每次只评估一个方法、一个数据集、一个 seed，结果写入 `results/nokg_eval/${method}/${dataset}/seed${seed}/`。示例均以 `seed 1` 为例；正式实验还需要将命令中的 `seed1` 和 `--seed 1` 分别改成 `seed2`/`--seed 2`、`seed3`/`--seed 3` 后各运行一次。
 
-### FedBiOT-NoKG 逐数据集评估
+### 全量数据集评估
+
+全量数据集评估不传 `--limit`，即评估所选数据分割的全部样本（默认为 `test`）。例如以 FedOT-NoKG 的 GraphQuestions seed 1 为例：
 
 ```bash
 mkdir -p logs/nokg_eval
 
-GPU=0 METHODS=fedbiot DATASETS=cwq SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedbiot_cwq_driver.log 2>&1 &
-
-GPU=0 METHODS=fedbiot DATASETS=graphquestions SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedbiot_graphquestions_driver.log 2>&1 &
-
-GPU=0 METHODS=fedbiot DATASETS=kqapro SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedbiot_kqapro_driver.log 2>&1 &
-
-GPU=0 METHODS=fedbiot DATASETS=openbookqa SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedbiot_openbookqa_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedot_nokg/graphquestions.yaml \
+  --dataset graphquestions \
+  --checkpoint checkpoints/nokg/fedot/graphquestions_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedot/graphquestions/seed1 \
+  > logs/nokg_eval/eval_fedot_graphquestions_seed1.log 2>&1 &
 ```
 
-### FedOT-NoKG 逐数据集评估
+如需要用验证集做完整评估，在上述命令末尾的 `--out` 前加上 `--split validation` 即可。
+
+### Full+Adapter 模型评估
+
+默认 `eval_type` 为 `emu`，使用仿真器加 adapter。传入 `--eval-type full` 则使用完整原始模型加载训练后的 adapter（full+adapter）。为了不覆盖 `emu+adapter` 的结果，使用独立的输出目录。
+
+```bash
+mkdir -p logs/nokg_eval_full_adapter
+
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD TORCHDYNAMO_SUPPRESS_ERRORS=1 nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedbiot_nokg/openbookqa.yaml \
+  --dataset openbookqa \
+  --checkpoint checkpoints/nokg/fedbiot/openbookqa_seed1.ckpt \
+  --seed 1 \
+  --eval-type full \
+  --out results/nokg_eval_full_adapter/fedbiot/openbookqa/seed1 \
+  > logs/nokg_eval_full_adapter/eval_fedbiot_openbookqa_seed1.log 2>&1 &
+```
+
+OpenBookQA 的 `TORCHDYNAMO_SUPPRESS_ERRORS=1` 用于在 `torch.compile` 与动态长度不兼容时回退到 eager 推理；其他数据集的命令只需保留 `--eval-type full` 并替换配置、checkpoint、数据集与输出路径。
+
+### FedBiOT-NoKG 逐数据集评估（均为全量数据集评估）
 
 ```bash
 mkdir -p logs/nokg_eval
 
-GPU=0 METHODS=fedot DATASETS=cwq SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedot_cwq_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedbiot_nokg/cwq.yaml \
+  --dataset cwq \
+  --checkpoint checkpoints/nokg/fedbiot/cwq_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedbiot/cwq/seed1 \
+  > logs/nokg_eval/eval_fedbiot_cwq_seed1.log 2>&1 &
 
-GPU=0 METHODS=fedot DATASETS=graphquestions SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedot_graphquestions_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedbiot_nokg/graphquestions.yaml \
+  --dataset graphquestions \
+  --checkpoint checkpoints/nokg/fedbiot/graphquestions_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedbiot/graphquestions/seed1 \
+  > logs/nokg_eval/eval_fedbiot_graphquestions_seed1.log 2>&1 &
 
-GPU=0 METHODS=fedot DATASETS=kqapro SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedot_kqapro_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedbiot_nokg/kqapro.yaml \
+  --dataset kqapro \
+  --checkpoint checkpoints/nokg/fedbiot/kqapro_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedbiot/kqapro/seed1 \
+  > logs/nokg_eval/eval_fedbiot_kqapro_seed1.log 2>&1 &
 
-GPU=0 METHODS=fedot DATASETS=openbookqa SEEDS="1 2 3" \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedot_openbookqa_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedbiot_nokg/openbookqa.yaml \
+  --dataset openbookqa \
+  --checkpoint checkpoints/nokg/fedbiot/openbookqa_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedbiot/openbookqa/seed1 \
+  > logs/nokg_eval/eval_fedbiot_openbookqa_seed1.log 2>&1 &
+```
+
+### FedOT-NoKG 逐数据集评估（均为全量数据集评估）
+
+```bash
+mkdir -p logs/nokg_eval
+
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedot_nokg/cwq.yaml \
+  --dataset cwq \
+  --checkpoint checkpoints/nokg/fedot/cwq_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedot/cwq/seed1 \
+  > logs/nokg_eval/eval_fedot_cwq_seed1.log 2>&1 &
+
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedot_nokg/graphquestions.yaml \
+  --dataset graphquestions \
+  --checkpoint checkpoints/nokg/fedot/graphquestions_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedot/graphquestions/seed1 \
+  > logs/nokg_eval/eval_fedot_graphquestions_seed1.log 2>&1 &
+
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedot_nokg/kqapro.yaml \
+  --dataset kqapro \
+  --checkpoint checkpoints/nokg/fedot/kqapro_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedot/kqapro/seed1 \
+  > logs/nokg_eval/eval_fedot_kqapro_seed1.log 2>&1 &
+
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedot_nokg/openbookqa.yaml \
+  --dataset openbookqa \
+  --checkpoint checkpoints/nokg/fedot/openbookqa_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedot/openbookqa/seed1 \
+  > logs/nokg_eval/eval_fedot_openbookqa_seed1.log 2>&1 &
 ```
 
 ### Smoke Evaluation
@@ -280,15 +357,26 @@ nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedot_openbookq
 ```bash
 mkdir -p logs/nokg_eval_smoke
 
-GPU=0 METHODS=fedbiot DATASETS=cwq SEEDS=1 LIMIT=5 OUTDIR=results/nokg_eval_smoke LOGDIR=logs/nokg_eval_smoke \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval_smoke/eval_fedbiot_cwq_driver.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedbiot_nokg/cwq.yaml \
+  --dataset cwq \
+  --checkpoint checkpoints/nokg/fedbiot/cwq_seed1.ckpt \
+  --seed 1 \
+  --limit 5 \
+  --out results/nokg_eval_smoke/fedbiot/cwq/seed1 \
+  > logs/nokg_eval_smoke/eval_fedbiot_cwq_seed1.log 2>&1 &
 ```
 
-断点续评时加上 `SKIP_EXISTING=1`：
+断点续评时，直接跳过已经存在 `result.json` 的目录，只对缺失结果的 seed 重新运行对应 Python 命令。例如重跑 FedBiOT-NoKG 的 CWQ seed 1：
 
 ```bash
-GPU=0 METHODS=fedbiot DATASETS=cwq SEEDS="1 2 3" SKIP_EXISTING=1 \
-nohup bash fedbiot_script/eval_nokg_all.sh > logs/nokg_eval/eval_fedbiot_cwq_resume.log 2>&1 &
+CUDA_VISIBLE_DEVICES=2 PYTHONPATH=$PWD nohup python fedbiot_script/eval_nokg_tasks.py \
+  --cfg fedbiot_script/fedbiot_nokg/cwq.yaml \
+  --dataset cwq \
+  --checkpoint checkpoints/nokg/fedbiot/cwq_seed1.ckpt \
+  --seed 1 \
+  --out results/nokg_eval/fedbiot/cwq/seed1 \
+  > logs/nokg_eval/eval_fedbiot_cwq_seed1.log 2>&1 &
 ```
 
 所有数据集评估完成后再汇总与检查：
